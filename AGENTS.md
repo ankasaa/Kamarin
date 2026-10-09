@@ -6,7 +6,7 @@ Balas ke user dalam bahasa Indonesia. Kode, komentar kode, pesan commit, dan tek
 
 ## Proyek
 
-Kamarin adalah dashboard manajemen dan analitik pemesanan untuk guesthouse, ditambah booking engine publik. Ini tugas akhir yang dikerjakan satu orang. Satu aplikasi Laravel 13 + React + Tailwind + PostgreSQL, dijalankan lewat Docker. Satu properti (maksimal sekitar 15 kamar), tetapi `property_id` tetap ada di tabel terkait.
+Kamarin adalah dashboard manajemen dan analitik pemesanan untuk guesthouse, ditambah booking engine publik. Ini tugas akhir yang dikerjakan satu orang. Satu aplikasi Laravel 13 + React + Tailwind + PostgreSQL. Di development, PHP, Composer, dan Node berjalan lokal (Windows) dan hanya PostgreSQL yang berjalan di Docker. Satu properti (maksimal sekitar 15 kamar), tetapi `property_id` tetap ada di tabel terkait.
 
 ## Sumber kebenaran (urutan prioritas)
 
@@ -21,7 +21,7 @@ Jika kode, permintaan user, dan dokumen saling bertentangan: **berhenti dan tany
 
 ## Aturan keras
 
-1. **Skema:** migration harus persis sesuai ERD v2.1 (nama tabel, kolom, tipe, nullable, unik). Jangan menambah, menghapus, atau mengganti nama tabel atau kolom tanpa persetujuan eksplisit user. Jika menurut kamu skema salah, tulis di `docs/STATUS.md` bagian "Pertanyaan terbuka".
+1. **Skema:** migration harus persis sesuai ERD v2.1 (nama tabel, kolom, tipe, nullable, unik), dengan pengecualian hanya di butir 13. Jangan menambah, menghapus, atau mengganti nama tabel atau kolom tanpa persetujuan eksplisit user. Jika menurut kamu skema salah, tulis di `docs/STATUS.md` bagian "Pertanyaan terbuka".
 2. **Nilai status** memakai teks persis seperti di ERD (huruf kecil, snake_case), diimplementasikan sebagai PHP enum:
    - booking: pending, confirmed, checked_in, checked_out, cancelled, expired, no_show
    - kamar: active, maintenance, inactive. Kebersihan: dirty, cleaning, ready
@@ -38,6 +38,15 @@ Jika kode, permintaan user, dan dokumen saling bertentangan: **berhenti dan tany
 10. **Tes memakai PostgreSQL, bukan SQLite.** Setiap aturan BR punya tes. Pakai ID kasus uji dari `docs/rencana_pengujian.md` sebagai nama atau komentar tes (mis. AV-03).
 11. **Dependensi:** jangan menambah paket tanpa persetujuan user. Verifikasi versi dan kompatibilitas dengan Laravel 13 lewat Composer, npm, dan dokumentasi resmi. Jangan menebak versi atau perintah.
 12. **Data dan rahasia:** tanpa data pribadi nyata. `guests.id_number` dikosongkan pada seeder. Jangan commit `.env` atau rahasia apa pun, hanya `.env.example`.
+13. **Bawaan framework dan starter kit:** tabel framework (`migrations`, `jobs`, `failed_jobs`, `sessions`, `cache`, `password_reset_tokens`) dan kolom bawaan pada `users` (`remember_token`, `email_verified_at`, timestamp) diizinkan di luar ERD. Fitur starter kit yang tidak dipakai (registrasi publik, 2FA, verifikasi email, teams, WorkOS) dinonaktifkan atau dibuang, termasuk migration dan kolomnya, dan referensi rutenya di frontend dihapus karena build gagal jika masih ada. Login, logout, dan reset password dipertahankan.
+
+## Lingkungan pengembangan (Windows)
+
+- PHP, Composer, dan Node berjalan lokal. Hanya PostgreSQL yang berjalan di Docker (compose), dengan satu database untuk development dan satu database terpisah untuk tes.
+- Perintah dan versi diverifikasi dari dokumentasi resmi Laravel 13. Server, queue worker, dan Vite dijalankan lewat skrip `composer run dev` (verifikasi isinya di `composer.json`). Scheduler dijalankan terpisah dengan `php artisan schedule:work` saat dibutuhkan.
+- Docker Desktop harus berjalan. Cek dengan `docker info`. Jika tidak berjalan, jalankan atau minta user.
+- Zona waktu aplikasi: `Asia/Jakarta` (sementara) lewat `.env`.
+- Jangan menjalankan `npm` atau `composer` untuk folder yang sama dari dua lingkungan berbeda (mis. Windows dan WSL), karena `node_modules` dan `vendor` bisa bentrok.
 
 ## Cara kerja
 

@@ -64,27 +64,27 @@ docs/               erd, business rules, diagram, dokumen ini
 | Hal | Usulan | Status | Alasan atau catatan |
 | --- | --- | --- | --- |
 | Otorisasi per peran | Tabel `roles` dan `users.role_id` dari ERD, diterapkan lewat Policy dan Gate. **Tanpa** paket role-permission | 🟦 | Paket role-permission umumnya membawa tabel roles dan permissions sendiri yang bertabrakan dengan tabel `roles` di ERD. Cukup tiga hingga empat peran tetap, jadi tidak perlu izin granular. Menghapus satu dependensi yang perlu dicek kompatibilitasnya dengan Laravel 13 |
-| Integrasi React dengan Laravel | Ikuti starter kit resmi | 🔎 | Cek di dokumentasi Laravel apa yang dipakai starter kit React pada versi 13 (misalnya Inertia) sebelum menyusun struktur halaman |
+| Integrasi React dengan Laravel | Starter kit React resmi (Inertia, React, TypeScript, Tailwind, shadcn/ui) dengan autentikasi bawaan Laravel | 🟦 terverifikasi di dokumentasi | Kit memakai TypeScript. Registrasi publik, 2FA, dan verifikasi email dinonaktifkan (lihat `AGENTS.md` aturan 13) |
 | Kalender timeline | Komponen buatan sendiri dengan CSS grid | 🟦 | Skala kecil (maksimal sekitar 15 kamar × 30 hari). Hindari risiko lisensi. Verifikasi dengan membandingkan 2-3 library (lisensi, perawatan) sebelum final |
 | Grafik | Recharts | ✅ | |
 | Ekspor laporan | Satu format saja, PDF atau Excel | 🔎 | Pilih paket yang masih terawat dan kompatibel dengan Laravel 13 |
 | Email | Laravel Mail dengan queue. Pengembangan: Mailtrap atau mode log | ✅ | |
-| Lingkungan Docker | Laravel Sail untuk development, Dockerfile produksi dibuat saat deploy | 🟦 | Lebih cepat untuk solo. Belum diputuskan |
+| Lingkungan development | PHP, Composer, dan Node lokal di Windows. Hanya PostgreSQL di Docker. Dockerfile aplikasi dibuat saat deploy | 🟦 direvisi dari Sail | Dokumentasi Laravel menyatakan Sail di Windows berjalan lewat WSL2 dan semua perintah harus lewat `sail`. Dengan repo di drive Windows dan agent di PowerShell, itu menambah gesekan. Alur resmi `composer run dev` berjalan langsung di komputer lokal. Sail tetap menjadi alternatif |
 | Alat tes | Pest atau PHPUnit | 🟦 | Pilih salah satu dan konsisten |
 | Database saat tes | PostgreSQL, bukan SQLite | 🟦 | Unique index parsial dan perilaku kunci baris hanya bisa dibuktikan di PostgreSQL |
 | Queue driver | `database` | 🟦 | Tidak perlu menambah layanan Redis untuk volume sekecil ini |
 
-## 6. Proses dalam Docker
+## 6. Lingkungan pengembangan dan proses
 
-| Proses | Fungsi |
-| --- | --- |
-| app | Web server aplikasi Laravel |
-| pgsql | PostgreSQL |
-| queue worker | Menjalankan job email |
-| scheduler | Menjalankan perintah terjadwal (kedaluwarsa booking) |
-| vite (hanya development) | Build aset React |
+**Development (Windows):** PHP, Composer, dan Node berjalan lokal. Hanya PostgreSQL yang berjalan di Docker (compose). Laravel Sail tidak dipakai di development.
 
-Pada produksi, queue worker dan scheduler harus berjalan terus dan dipantau (checklist Fase 11).
+| Proses | Fungsi | Cara menjalankan |
+| --- | --- | --- |
+| PostgreSQL | Database development dan database tes | Kontainer Docker |
+| Server, queue worker, Vite | Aplikasi, job email, build aset | `composer run dev` (verifikasi isinya di `composer.json`) |
+| Scheduler | Perintah terjadwal (kedaluwarsa booking) | `php artisan schedule:work` |
+
+**Produksi (Fase 11):** image Docker aplikasi dibuat saat deploy, dengan proses app, queue worker, scheduler, dan database. Queue worker dan scheduler harus berjalan terus dan dipantau.
 
 ## 7. Basis data dan performa
 
