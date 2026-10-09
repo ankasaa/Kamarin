@@ -2,7 +2,7 @@
 
 File hidup. Agent memperbarui bagian "Log tugas" setelah **setiap** tugas. Bagian "Ringkasan untuk Claude" disalin atau diunggah ke chat Claude saat meminta review atau saran, supaya tidak perlu menempelkan seluruh repo.
 
-Diperbarui terakhir: 2026-10-09
+Diperbarui terakhir: 2026-10-10
 
 ---
 
@@ -10,12 +10,12 @@ Diperbarui terakhir: 2026-10-09
 
 Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi minimal:
 
-- Tugas dan cabang:
-- Status: selesai, sebagian, atau terblokir
-- Hasil tes: jumlah lulus dan gagal, plus ID kasus uji yang gagal
-- File kunci untuk di-review (path):
-- Penyimpangan dari dokumen sumber (jika ada):
-- Pertanyaan yang butuh keputusan:
+- Tugas dan cabang: T-001, `task/T-001-setup-environment`
+- Status: selesai
+- Hasil tes: 40 tes bawaan Pest lulus, 0 gagal (138 assert). Catatan jujur: tes bawaan masih memakai SQLite `:memory:` sesuai default `phpunit.xml`; pengalihan ke PostgreSQL `kamarin_test` dikerjakan di T-003
+- File kunci untuk di-review (path): `compose.yaml`, `docker/postgresql/init-test-db.sql`, `.env.example`, `config/app.php` (timezone env), `README.md`
+- Penyimpangan dari dokumen sumber (jika ada): `config/app.php` skeleton awalnya hardcode `'timezone' => 'UTC'`, diubah menjadi `env('APP_TIMEZONE', 'UTC')` agar memenuhi syarat "timezone lewat `.env`". `laravel/sail` tetap ada di `require-dev` (bawaan skeleton, tidak dipakai)
+- Pertanyaan yang butuh keputusan: AGENTS.md bagian Lingkungan masih menulis zona waktu "Asia/Jakarta (sementara)", sedangkan jawaban user 2026-10-09 memutuskan **Asia/Makassar (fix)** — yang dipakai di `.env`. Minta user memperbarui AGENTS.md agar konsisten
 
 ---
 
@@ -25,7 +25,7 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 | --- | --- |
 | Fase 2 (aturan bisnis) | Selesai: `docs/business_rules_kamarin.md` v1.1, keputusan K1 sampai K10 disetujui |
 | Fase 3 (perancangan) | Dokumen selesai dan disetujui. Wireframe Figma masih dikerjakan user |
-| Fase 4 (setup) | Belum dimulai |
+| Fase 4 (setup) | Berjalan: T-001 selesai (2026-10-10), T-002 dan T-003 menyusul |
 | ERD | v2.1, dibekukan |
 
 ## Keputusan yang sudah dikunci
@@ -40,11 +40,11 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 
 | Hal | Usulan | Status |
 | --- | --- | --- |
-| Alat tes | Pest atau PHPUnit | Belum dipilih |
-| Docker | Laravel Sail untuk development | Usulan |
+| Alat tes | Pest | Dipilih: Pest 4 (default installer Laravel 13, disetujui user 2026-10-09) |
+| Docker | PostgreSQL saja di Docker (compose), aplikasi lokal | Diputuskan 2026-10-09 menggantikan usulan Sail |
 | Role dan permission | Tabel `roles` + Policy, tanpa paket | Usulan |
 | Kalender timeline | Komponen CSS grid buatan sendiri | Usulan, perlu verifikasi |
-| Starter kit React | Ikuti dokumentasi resmi Laravel 13 | Perlu diverifikasi |
+| Starter kit React | Starter kit React resmi Laravel 13 (Inertia, Fortify) | Terverifikasi dan dipasang di T-001 |
 | Paket ekspor laporan | PDF atau Excel, satu format | Perlu diverifikasi |
 
 ## Pertanyaan terbuka dari agent
@@ -94,6 +94,8 @@ PowerShell. Konsekuensi bekerja di `/mnt/c`:
 
 Rekomendasi agent: **Pertanyaan 1 = A, Pertanyaan 2 = A, Pertanyaan 3 = biarkan manual (agent menjalankan), Pertanyaan 4 = Asia/Jakarta.** Menunggu jawaban sebelum melanjutkan ke Langkah 2.
 
+**Status: sudah dijawab user (2026-10-09).** Keputusan: Pertanyaan 1 = Opsi A (pasang `laravel/installer`, buat di folder sementara, pindah ke root). Pertanyaan 2 = **Opsi D baru** (bukan A): PHP, Composer, Node lokal di Windows; hanya PostgreSQL di Docker (compose, database dev dan tes terpisah); repo tetap di lokasi sekarang; syarat `pdo_pgsql` aktif. Pertanyaan 3 = manual, agent boleh menjalankan. Pertanyaan 4 = **Asia/Makassar (fix)**, menggantikan usulan Asia/Jakarta. AGENTS.md diperbarui user (bagian Lingkungan pengembangan, aturan 13) dan `docs/arsitektur_sistem.md` bagian 5-6 direvisi sesuai keputusan ini. Catatan: baris zona waktu di AGENTS.md masih "Asia/Jakarta (sementara)" — perlu diperbarui user ke Asia/Makassar.
+
 ---
 
 ## Log tugas
@@ -112,4 +114,24 @@ Entri terbaru di atas. Template:
 - Reviewer: (agent lain atau Claude) dan hasilnya
 ```
 
-(Belum ada tugas yang dikerjakan.)
+### T-001 Setup lingkungan Laravel 13 + React + PostgreSQL (2026-10-10)
+
+- Cabang: `task/T-001-setup-environment`
+- Status: selesai
+- Yang dikerjakan:
+  - Prasyarat: aktifkan ekstensi PHP lokal `pdo_pgsql`, `zip`, `pdo_sqlite`, `sqlite3` di `php.ini` Laragon (backup: `php.ini.bak-t001`). `pdo_pgsql` adalah syarat user; `zip` dibutuhkan Composer; `sqlite3`/`pdo_sqlite` dibutuhkan tes bawaan yang memakai SQLite `:memory:`.
+  - Pasang Laravel installer v5.32.0 dengan `composer global require laravel/installer` (perintah resmi dokumentasi Installation Laravel 13).
+  - `laravel new kamarin-scaffold -n --database=pgsql --react --pest --npm --no-boost` di folder sementara (`%LOCALAPPDATA%\Temp\opencode`), lalu dipindah ke root repo dengan `robocopy /E /MOVE`. `docs/` dan `AGENTS.md` tidak tersentuh (tidak ada di scaffold, tidak ditimpa).
+  - Pilihan installer (diverifikasi lewat `laravel new --help`): `--react` (React Starter Kit resmi: Inertia + React + TypeScript + Tailwind), autentikasi default Laravel via Fortify (bukan WorkOS), tanpa `--teams`, `--database=pgsql`, test framework `--pest` (default masuk akal), `--no-boost` (Boost = paket tambahan, butuh persetujuan).
+  - Buat `compose.yaml` (hanya layanan `postgres:18-alpine`) dengan database `kamarin` (dev) dan `kamarin_test` (tes, dibuat lewat `docker/postgresql/init-test-db.sql` pada start pertama).
+  - `.env` dan `.env.example`: `APP_TIMEZONE=Asia/Makassar`, `DB_*` placeholder (`kamarin`/`kamarin`/`kamarin`), `MAIL_MAILER=log`. `.env` tidak masuk git (cek `.gitignore`).
+  - Verifikasi: `php artisan migrate --force` sukses di database kosong (5 migration bawaan), halaman awal `http://127.0.0.1:8000` via `composer run dev` mengembalikan HTTP 200 (welcome page React, Vite dev aktif), `php artisan config:show app.timezone` = `Asia/Makassar`.
+- Tes: 40 lulus, 0 gagal (138 assert, Pest 4.7.8). Tes bawaan starter kit; masih memakai SQLite `:memory:` sesuai default `phpunit.xml` — pengalihan ke PostgreSQL `kamarin_test` dikerjakan di T-003.
+- File kunci: `compose.yaml`, `docker/postgresql/init-test-db.sql`, `.env.example`, `config/app.php` (baris timezone), `README.md`
+- Penyimpangan dari dokumen sumber: (1) `config/app.php` bawaan skeleton memakai `'timezone' => 'UTC'` hardcode, diubah ke `env('APP_TIMEZONE', 'UTC')` agar timezone bisa diatur lewat `.env` sesuai instruksi tugas dan AGENTS.md. (2) `laravel/sail` tetap berada di `require-dev` (bawaan skeleton, tidak dipakai; `arsitektur_sistem.md` menyebut Sail tetap alternatif). (3) Tes bawaan berjalan di SQLite, bukan PostgreSQL (aturan keras 10) — hanya sementara sampai T-003.
+- Perintah kunci dan sumber dokumentasi:
+  - `composer global require laravel/installer`, `laravel new ... --react --database=pgsql --pest --npm --no-boost` — dokumentasi resmi Laravel 13 Installation (laravel.com/docs/13.x/installation); daftar opsi diverifikasi langsung dari `laravel new --help` (installer 5.32.0).
+  - `composer run dev` → isinya `@php artisan dev` (server + queue worker + Vite) — diverifikasi dari `composer.json`, sejalan AGENTS.md bagian Lingkungan pengembangan.
+  - `docker compose up -d` — Docker Compose v5.5.1; Docker Desktop dijalankan manual oleh agent (disetujui user).
+- Penjelasan untuk sidang (bagaimana dan kenapa): Proyek dibuat dengan Laravel installer resmi sehingga kerangka, starter kit React (Inertia + Fortify), dan Pest mengikuti default resmi Laravel 13 tanpa konfigurasi manual. Karena repo berada di drive Windows dan Sail mewajibkan WSL2, diputuskan PHP, Composer, dan Node berjalan lokal, sementara hanya PostgreSQL 18 yang dikemas lewat Docker; `compose.yaml` sengaja hanya berisi satu layanan database. Database dibagi dua sejak awal — `kamarin` untuk development dan `kamarin_test` untuk tes — agar pengujian tidak pernah menyentuh data development, sesuai aturan keras nomor 10. Timezone dipindah dari hardcode ke `.env` (`APP_TIMEZONE=Asia/Makassar`) mengikuti prinsip bahwa kebijakan tidak boleh hardcode. Kelayakan lingkungan dibuktikan dengan migration di database kosong, halaman awal yang terbuka lewat `composer run dev`, dan seluruh tes bawaan yang lulus.
+- Reviewer: belum ada (backlog menandai T-001 "Tidak perlu" review Claude)
