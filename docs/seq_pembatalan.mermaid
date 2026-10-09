@@ -1,0 +1,38 @@
+sequenceDiagram
+    autonumber
+    actor Tamu
+    actor Staf
+    participant UI as Dashboard React
+    participant API as Server Laravel
+    participant DB as PostgreSQL
+
+    Tamu->>Staf: Minta batal lewat WhatsApp atau telepon
+    Staf->>UI: Buka detail booking lalu klik Batalkan
+    UI->>API: Minta saran kebijakan
+    API->>DB: Baca check_in_date, pengaturan free_cancel_days, dan payments
+    API->>API: Hitung selisih hari antara hari ini dan check_in_date
+    alt Selisih lebih besar atau sama dengan free_cancel_days
+        API-->>UI: Saran, DP dikembalikan atau dijadwal ulang
+    else Selisih lebih kecil
+        API-->>UI: Saran, DP hangus
+    end
+
+    Staf->>UI: Isi alasan pembatalan dan pilih perlakuan DP
+    UI->>API: Kirim pembatalan
+    alt Status bukan pending atau confirmed
+        API-->>UI: Ditolak
+    else Resepsionis menyimpang dari saran
+        API-->>UI: Ditolak, penyimpangan hanya oleh Owner atau Manager
+    else Valid
+        API->>DB: BEGIN
+        API->>DB: Ubah status menjadi cancelled, isi cancelled_at dan cancellation_reason
+        API->>DB: Nonaktifkan booking_nights, is_active menjadi false
+        opt DP dikembalikan
+            API->>DB: Insert payments bertipe refund
+        end
+        API->>DB: Catat booking_status_logs
+        API->>DB: COMMIT
+        API-->>UI: Booking dibatalkan dan kamar tersedia kembali
+    end
+
+    Staf->>Tamu: Informasikan hasil lewat WhatsApp, tanpa email otomatis di MVP

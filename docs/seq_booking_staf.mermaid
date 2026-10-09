@@ -1,0 +1,61 @@
+sequenceDiagram
+    autonumber
+    actor Staf
+    participant UI as Dashboard React
+    participant API as Server Laravel
+    participant DB as PostgreSQL
+    participant Q as Queue Email
+    actor Tamu
+
+    Note over Staf,Tamu: A. Membuat booking dari WhatsApp, telepon, walk-in, atau OTA
+
+    Staf->>UI: Buka form booking atau klik sel kosong di kalender
+    Staf->>UI: Isi tanggal dan jumlah tamu
+    UI->>API: Cek ketersediaan dan harga
+    API->>DB: Cari kamar active tanpa malam aktif dan tanpa room_blocks yang bentrok
+    DB-->>API: Daftar kamar tersedia
+    API->>API: Hitung harga per malam, cek kapasitas dan minimum_nights
+    API-->>UI: Kamar tersedia dengan rincian harga per malam
+
+    Staf->>UI: Pilih kamar, isi data tamu, sumber booking, dan opsi pembayaran
+    UI->>API: Cari tamu berdasarkan email atau telepon
+    API->>DB: Query guests
+    DB-->>API: Tamu lama atau kosong
+    API-->>UI: Hasil pencarian
+
+    Note over UI,API: Jika minimum_nights tidak terpenuhi, hanya Owner atau Manager boleh override dengan alasan
+
+    Staf->>UI: Simpan booking
+    UI->>API: Kirim data booking
+    API->>DB: BEGIN, kunci baris kamar, cek ulang ketersediaan
+    alt Masih tersedia
+        API->>DB: Simpan guest bila baru, booking pending, booking_items, booking_nights, booking_status_logs
+        Note over API,DB: created_by_user_id terisi dan expires_at kosong untuk booking staf
+        API->>DB: COMMIT
+        API-->>UI: Kode booking dan ringkasan
+    else Bentrok
+        API->>DB: ROLLBACK
+        API-->>UI: Kamar sudah tidak tersedia
+    end
+
+    Note over Staf,Tamu: B. Pembayaran dan konfirmasi
+
+    opt DP atau pembayaran diterima
+        Staf->>UI: Catat pembayaran dengan jumlah, tipe, metode, dan nama pembayar
+        UI->>API: Simpan pembayaran
+        API->>DB: Insert payments
+        API-->>UI: Terbayar, sisa tagihan, dan status bayar terbaru
+    end
+
+    Staf->>UI: Konfirmasi booking
+    UI->>API: Minta konfirmasi
+    alt Transfer bank tanpa DP terverifikasi
+        API-->>UI: Ditolak, override hanya Owner atau Manager dengan alasan
+    else Syarat terpenuhi
+        API->>DB: Ubah status menjadi confirmed, kosongkan expires_at, catat status log
+        opt Sumber bukan OTA dan email tamu tersedia
+            API->>Q: Antrekan email booking confirmed
+            Q-->>Tamu: Email booking confirmed
+        end
+        API-->>UI: Booking confirmed
+    end

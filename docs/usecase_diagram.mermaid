@@ -1,0 +1,77 @@
+flowchart LR
+    Tamu(["Tamu"])
+    Res(["Resepsionis"])
+    HK(["Housekeeping"])
+    Mgr(["Manager"])
+    Own(["Owner"])
+    Sch(["Scheduler"])
+
+    Own -.->|mewarisi hak| Mgr
+    Mgr -.->|mewarisi hak| Res
+
+    subgraph PUB["Booking publik"]
+        U1([Cek ketersediaan dan harga])
+        U2([Kirim pesanan])
+        U3([Cek status pesanan])
+    end
+
+    subgraph OPS["Pemesanan dan operasional harian"]
+        U4([Lihat kalender timeline])
+        U5([Buat booking])
+        U6([Catat pembayaran])
+        U7([Konfirmasi booking])
+        U8([Ubah booking, alasan wajib])
+        U9([Batalkan booking, alasan wajib])
+        U10([Tandai no-show])
+        U11([Check-in dan check-out])
+        U12([Kelola data tamu])
+        U13([Perbarui status kebersihan])
+        U14([Lihat daftar kamar dan status kebersihan])
+        U15([Lihat ringkasan operasional tanpa keuangan])
+    end
+
+    subgraph MGT["Pengelolaan dan analitik"]
+        U16([Kelola kamar dan tipe kamar])
+        U17([Kelola tarif dan pengaturan properti])
+        U18([Blokir tanggal kamar])
+        U19([Lihat analitik dan laporan keuangan])
+        U20([Ekspor laporan bulanan])
+        U21([Kelola pengguna terbatas])
+        U22([Kelola pengguna dan peran])
+        U23([Pengaturan sistem])
+    end
+
+    subgraph SYS["Otomatis"]
+        U24([Kedaluwarsakan booking pending])
+    end
+
+    Tamu --> U1
+    Tamu --> U2
+    Tamu --> U3
+
+    Res --> U4
+    Res --> U5
+    Res --> U6
+    Res --> U7
+    Res --> U8
+    Res --> U9
+    Res --> U10
+    Res --> U11
+    Res --> U12
+    Res --> U13
+    Res --> U15
+
+    HK --> U13
+    HK --> U14
+
+    Mgr --> U16
+    Mgr --> U17
+    Mgr --> U18
+    Mgr --> U19
+    Mgr --> U20
+    Mgr --> U21
+
+    Own --> U22
+    Own --> U23
+
+    Sch --> U24

@@ -1,0 +1,50 @@
+sequenceDiagram
+    autonumber
+    actor Res as Resepsionis
+    participant UI as Dashboard React
+    participant API as Server Laravel
+    participant DB as PostgreSQL
+
+    Note over Res,DB: A. Check-in
+
+    Res->>UI: Buka daftar check-in hari ini
+    UI->>API: Minta daftar
+    API->>DB: Ambil booking confirmed dengan check_in_date hari ini
+    DB-->>API: Booking beserta sisa tagihan dan status kebersihan kamar
+    API-->>UI: Daftar check-in
+
+    Res->>UI: Pilih booking lalu klik Check-in
+    UI->>API: Minta check-in
+    API->>DB: Baca status booking, sisa tagihan, dan housekeeping_statuses
+    alt Status bukan confirmed
+        API-->>UI: Ditolak
+    else Status confirmed
+        opt Kamar belum ready atau sisa tagihan lebih dari nol
+            API-->>UI: Peringatan, tidak memblokir
+            opt Pelunasan dilakukan di meja
+                Res->>UI: Catat pelunasan
+                UI->>API: Simpan pembayaran bertipe settlement
+                API->>DB: Insert payments
+            end
+            Res->>UI: Lanjutkan check-in
+        end
+        API->>DB: Ubah status menjadi checked_in, isi checked_in_at, catat status log
+        API-->>UI: Check-in berhasil
+    end
+
+    Note over Res,DB: B. Check-out
+
+    Res->>UI: Buka daftar tamu menginap lalu klik Check-out
+    UI->>API: Minta check-out
+    API->>DB: Baca status booking dan sisa tagihan
+    alt Status bukan checked_in
+        API-->>UI: Ditolak
+    else Status checked_in
+        opt Sisa tagihan lebih dari nol
+            API-->>UI: Peringatan, tidak memblokir
+            Res->>UI: Catat pelunasan atau lanjutkan
+        end
+        API->>DB: Ubah status menjadi checked_out, isi checked_out_at, catat status log
+        API->>DB: Ubah housekeeping_statuses semua kamar booking menjadi dirty
+        API-->>UI: Check-out berhasil dan kamar menunggu dibersihkan
+    end

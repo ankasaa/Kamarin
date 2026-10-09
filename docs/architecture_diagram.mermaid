@@ -1,0 +1,38 @@
+flowchart TB
+    subgraph Klien["Browser"]
+        Staf["Staf: dashboard React"]
+        Guest["Tamu: halaman booking publik React"]
+    end
+
+    subgraph App["Aplikasi Laravel 13, satu aplikasi dalam Docker"]
+        Web["Routes, controllers, policy, validasi request"]
+        subgraph Dom["Domain services"]
+            Av["AvailabilityService"]
+            Pr["PricingService"]
+            Bk["BookingService dan BookingChangeService"]
+            Py["PaymentService"]
+            An["Analytics queries dan ReportExporter"]
+        end
+        Q["Queue worker: kirim email"]
+        Sch["Scheduler: kedaluwarsakan booking pending"]
+    end
+
+    DB[("PostgreSQL: transaksi dan unique index parsial booking_nights")]
+    Mail["Layanan email: Mailtrap atau mode log"]
+
+    Staf -->|HTTPS| Web
+    Guest -->|HTTPS| Web
+    Web --> Av
+    Web --> Bk
+    Web --> Py
+    Web --> An
+    Bk --> Av
+    Bk --> Pr
+    Av --> DB
+    Pr --> DB
+    Bk --> DB
+    Py --> DB
+    An --> DB
+    Bk -->|antrekan email| Q
+    Q --> Mail
+    Sch --> DB

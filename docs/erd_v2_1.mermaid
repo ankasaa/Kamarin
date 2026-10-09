@@ -1,0 +1,240 @@
+erDiagram
+    %% Catatan: semua tabel memakai created_at dan updated_at standar Laravel
+    %% ================= ACCESS =================
+    ROLES ||--o{ USERS : "dimiliki"
+    PROPERTIES |o--o{ USERS : "menampung"
+
+    ROLES {
+        bigint id PK
+        varchar name UK
+        text description
+    }
+    USERS {
+        bigint id PK
+        bigint role_id FK
+        bigint property_id FK "nullable"
+        varchar name
+        varchar email UK
+        varchar password
+        boolean is_active
+        timestamp created_at
+    }
+
+    %% ================= PROPERTY + SETTINGS =================
+    PROPERTIES {
+        bigint id PK
+        varchar name
+        text address
+        varchar city
+        varchar phone
+        time check_in_time "default 14:00"
+        time check_out_time "default 12:00"
+        smallint deposit_percent "default 50"
+        smallint pending_expiry_hours "default 24"
+        smallint free_cancel_days "default 2"
+        time no_show_cutoff_time "default 22:00"
+    }
+
+    %% ================= ROOMS =================
+    PROPERTIES ||--o{ ROOM_TYPES : "punya"
+    PROPERTIES ||--o{ ROOMS : "punya"
+    ROOM_TYPES ||--o{ ROOMS : "menjadi tipe"
+
+    ROOM_TYPES {
+        bigint id PK
+        bigint property_id FK
+        varchar name
+        text description
+        int capacity
+        boolean is_active
+    }
+    ROOMS {
+        bigint id PK
+        bigint property_id FK
+        bigint room_type_id FK
+        varchar room_number "UK dengan property_id"
+        int floor
+        varchar status "active, maintenance, inactive"
+    }
+
+    %% ================= AMENITIES (level tipe kamar) =================
+    ROOM_TYPES ||--o{ ROOM_TYPE_AMENITIES : "memiliki"
+    AMENITIES ||--o{ ROOM_TYPE_AMENITIES : "dipakai di"
+
+    AMENITIES {
+        bigint id PK
+        varchar name UK
+        varchar icon
+    }
+    ROOM_TYPE_AMENITIES {
+        bigint id PK
+        bigint room_type_id FK
+        bigint amenity_id FK "UK dengan room_type_id"
+    }
+
+    %% ================= HOUSEKEEPING 1:1 =================
+    ROOMS ||--o| HOUSEKEEPING_STATUSES : "punya status kebersihan"
+    USERS |o--o{ HOUSEKEEPING_STATUSES : "memperbarui"
+
+    HOUSEKEEPING_STATUSES {
+        bigint id PK
+        bigint room_id FK "unique, 1:1 dengan room"
+        bigint updated_by_user_id FK "nullable"
+        varchar status "dirty, cleaning, ready"
+        text notes
+        timestamp updated_at
+    }
+
+    %% ================= ROOM BLOCKS =================
+    ROOMS ||--o{ ROOM_BLOCKS : "diblokir"
+    USERS |o--o{ ROOM_BLOCKS : "membuat blokir"
+
+    ROOM_BLOCKS {
+        bigint id PK
+        bigint room_id FK
+        bigint created_by_user_id FK "nullable"
+        date start_date
+        date end_date "CHECK end_date > start_date"
+        varchar reason
+    }
+
+    %% ================= GUEST & SOURCE =================
+    GUESTS ||--o{ BOOKINGS : "membuat"
+    BOOKING_SOURCES |o--o{ BOOKINGS : "menjadi asal"
+
+    GUESTS {
+        bigint id PK
+        varchar name
+        varchar email
+        varchar phone
+        varchar country
+        varchar id_type "opsional"
+        varchar id_number "opsional, sensitif"
+        timestamp deleted_at "soft delete"
+    }
+    BOOKING_SOURCES {
+        bigint id PK
+        varchar name UK "Website, WhatsApp, OTA, Walk-in, Telepon"
+    }
+
+    %% ================= RATES =================
+    PROPERTIES ||--o{ RATES : "punya"
+    ROOM_TYPES ||--o{ RATES : "dihargai"
+
+    RATES {
+        bigint id PK
+        bigint property_id FK
+        bigint room_type_id FK
+        varchar name
+        decimal price
+        date start_date "nullable untuk tarif default"
+        date end_date "nullable untuk tarif default"
+        jsonb days_of_week "nullable, ISO 1-7, mis. [5,6]"
+        int priority "lebih tinggi menang"
+        boolean is_default
+        int minimum_nights
+    }
+
+    %% ================= BOOKINGS =================
+    PROPERTIES ||--o{ BOOKINGS : "menerima"
+    USERS |o--o{ BOOKINGS : "membuat booking"
+
+    BOOKINGS {
+        bigint id PK
+        bigint property_id FK
+        bigint guest_id FK
+        bigint created_by_user_id FK "nullable"
+        bigint booking_source_id FK "nullable"
+        varchar booking_code UK
+        timestamp created_at "dasar perhitungan lead time"
+        varchar status "pending, confirmed, checked_in, checked_out, cancelled, expired, no_show"
+        varchar payment_option "bank_transfer, pay_on_arrival, via_ota"
+        int guest_count
+        date check_in_date
+        date check_out_date "CHECK check_out_date > check_in_date"
+        timestamp expires_at "nullable, untuk pending transfer"
+        timestamp checked_in_at "nullable"
+        timestamp checked_out_at "nullable"
+        decimal total_amount
+        varchar cancellation_reason "nullable"
+        timestamp cancelled_at "nullable"
+        text notes
+        timestamp deleted_at "soft delete"
+    }
+
+    %% ================= BOOKING ITEMS + NIGHTS =================
+    BOOKINGS ||--o{ BOOKING_ITEMS : "berisi"
+    ROOMS ||--o{ BOOKING_ITEMS : "dipesan lewat"
+    BOOKING_ITEMS ||--o{ BOOKING_NIGHTS : "terdiri dari"
+    ROOMS ||--o{ BOOKING_NIGHTS : "terisi pada"
+    RATES |o--o{ BOOKING_NIGHTS : "mengunci harga"
+
+    BOOKING_ITEMS {
+        bigint id PK
+        bigint booking_id FK
+        bigint room_id FK
+        decimal subtotal "jumlah harga semua malam"
+    }
+    BOOKING_NIGHTS {
+        bigint id PK
+        bigint booking_item_id FK
+        bigint room_id FK "salinan, untuk constraint"
+        bigint rate_id FK "nullable"
+        date stay_date
+        decimal price "harga malam itu"
+        boolean is_active "false jika batal atau expired"
+    }
+
+    %% ================= EXTRA CHARGES =================
+    BOOKINGS ||--o{ BOOKING_CHARGES : "memiliki biaya tambahan"
+
+    BOOKING_CHARGES {
+        bigint id PK
+        bigint booking_id FK
+        varchar description
+        decimal amount
+    }
+
+    %% ================= PAYMENTS =================
+    BOOKINGS ||--o{ PAYMENTS : "dibayar lewat"
+    USERS |o--o{ PAYMENTS : "mencatat"
+
+    PAYMENTS {
+        bigint id PK
+        bigint booking_id FK
+        bigint recorded_by_user_id FK "nullable"
+        decimal amount
+        varchar type "deposit, settlement, refund"
+        varchar method "bank_transfer, cash, card_or_qris, ota"
+        varchar status "pending, verified, failed, refunded"
+        varchar payer_name "bisa beda dari nama tamu"
+        date payment_date
+        varchar reference_number
+        varchar proof_path "opsional"
+    }
+
+    %% ================= LOGS =================
+    BOOKINGS ||--o{ BOOKING_STATUS_LOGS : "tercatat di"
+    BOOKINGS ||--o{ BOOKING_CHANGE_LOGS : "perubahan tercatat di"
+    USERS |o--o{ BOOKING_STATUS_LOGS : "mengubah status"
+    USERS |o--o{ BOOKING_CHANGE_LOGS : "mengubah data"
+
+    BOOKING_STATUS_LOGS {
+        bigint id PK
+        bigint booking_id FK
+        bigint changed_by_user_id FK "nullable"
+        varchar old_status
+        varchar new_status
+        text note
+        timestamp created_at
+    }
+    BOOKING_CHANGE_LOGS {
+        bigint id PK
+        bigint booking_id FK
+        bigint changed_by_user_id FK "nullable"
+        varchar change_type "dates_changed, room_changed, guest_count_changed"
+        text old_value
+        text new_value
+        text reason
+        timestamp created_at
+    }

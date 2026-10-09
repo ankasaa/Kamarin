@@ -1,0 +1,37 @@
+sequenceDiagram
+    autonumber
+    actor Staf
+    participant UI as Dashboard React
+    participant API as Server Laravel
+    participant DB as PostgreSQL
+
+    Staf->>UI: Buka detail booking lalu pilih ubah tanggal, perpanjang, atau percepat check-out
+    Staf->>UI: Isi tanggal baru
+    UI->>API: Minta pratinjau perubahan
+    API->>DB: Baca booking_nights saat ini dan cek ketersediaan malam baru
+    Note over API,DB: Malam milik booking ini sendiri tidak dianggap bentrok
+    API->>API: Hitung harga, malam yang tidak berubah tetap, malam baru memakai tarif berlaku
+    API->>API: Cek ulang minimum_nights pada check-in baru
+    API-->>UI: Pratinjau selisih total, sisa tagihan, dan peringatan kelebihan bayar
+
+    alt Malam baru bentrok
+        API-->>UI: Ditolak, tidak ada perubahan
+    else minimum_nights tidak terpenuhi
+        API-->>UI: Ditolak, override hanya Owner atau Manager dengan alasan
+    else Valid
+        Staf->>UI: Isi alasan lalu simpan, alasan wajib untuk semua peran
+        UI->>API: Kirim perubahan
+        API->>DB: BEGIN, kunci baris kamar, cek ulang ketersediaan
+        alt Masih tersedia
+            API->>DB: Ubah check_in_date dan check_out_date pada bookings
+            API->>DB: Nonaktifkan malam yang dihapus, tambah malam baru di booking_nights
+            API->>DB: Hitung ulang booking_items.subtotal dan bookings.total_amount
+            API->>DB: Insert booking_change_logs berisi jenis, nilai lama, nilai baru, alasan, pelaku
+            API->>DB: COMMIT
+            API-->>UI: Booking diperbarui
+            Staf->>Staf: Beri tahu tamu lewat WhatsApp, tanpa email otomatis di MVP
+        else Bentrok pada cek ulang
+            API->>DB: ROLLBACK
+            API-->>UI: Kamar sudah tidak tersedia untuk tanggal baru
+        end
+    end
