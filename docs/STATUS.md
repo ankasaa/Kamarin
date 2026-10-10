@@ -134,4 +134,69 @@ Entri terbaru di atas. Template:
   - `composer run dev` → isinya `@php artisan dev` (server + queue worker + Vite) — diverifikasi dari `composer.json`, sejalan AGENTS.md bagian Lingkungan pengembangan.
   - `docker compose up -d` — Docker Compose v5.5.1; Docker Desktop dijalankan manual oleh agent (disetujui user).
 - Penjelasan untuk sidang (bagaimana dan kenapa): Proyek dibuat dengan Laravel installer resmi sehingga kerangka, starter kit React (Inertia + Fortify), dan Pest mengikuti default resmi Laravel 13 tanpa konfigurasi manual. Karena repo berada di drive Windows dan Sail mewajibkan WSL2, diputuskan PHP, Composer, dan Node berjalan lokal, sementara hanya PostgreSQL 18 yang dikemas lewat Docker; `compose.yaml` sengaja hanya berisi satu layanan database. Database dibagi dua sejak awal — `kamarin` untuk development dan `kamarin_test` untuk tes — agar pengujian tidak pernah menyentuh data development, sesuai aturan keras nomor 10. Timezone dipindah dari hardcode ke `.env` (`APP_TIMEZONE=Asia/Makassar`) mengikuti prinsip bahwa kebijakan tidak boleh hardcode. Kelayakan lingkungan dibuktikan dengan migration di database kosong, halaman awal yang terbuka lewat `composer run dev`, dan seluruh tes bawaan yang lulus.
-- Reviewer: belum ada (backlog menandai T-001 "Tidak perlu" review Claude)
+- Reviewer: Antigravity (2026-10-10) — hasil di bawah
+
+#### Hasil review Reviewer (2026-10-10)
+
+Reviewer memeriksa cabang secara mandiri tanpa mengedit kode. Semua perintah dijalankan langsung; tidak hanya mempercayai laporan Builder.
+
+**compose.yaml**
+
+| Sub-poin | Status | Bukti |
+| --- | --- | --- |
+| Port host:container | ❌ → ✅ **Diperbaiki** | Semula `5432:5432` (bind ke semua antarmuka, melanggar AGENTS.md). Diperbaiki ke `127.0.0.1:5432:5432`. Diverifikasi: `docker ps` → `127.0.0.1:5432->5432/tcp`. **Temuan ini terlewat oleh Reviewer saat review pertama** |
+| Kredensial | ✅ Sesuai | `kamarin/kamarin/kamarin` — development-only, bukan rahasia produksi; didokumentasikan di `.env.example` |
+| Volume data | ✅ Sesuai | Mount ke `/var/lib/postgresql` — **benar untuk image 18**. Saran Reviewer untuk mengubah ke `/var/lib/postgresql/data` ditolak user. Sumber: README resmi `docker-library/postgres` (PGDATA dan VOLUME berubah di versi 18 ke atas) |
+| Init script | ✅ Sesuai | `./docker/postgresql/init-test-db.sql:ro` → `CREATE DATABASE kamarin_test;` — diverifikasi langsung |
+| Kontainer berjalan | ✅ Sesuai | `docker ps` → `kamarin-postgres Up (healthy)`, port `127.0.0.1:5432->5432/tcp` (setelah perbaikan) |
+| Koneksi DB dari app | ✅ Sesuai | `php artisan db:show` → PostgreSQL 18.6, database `kamarin`, 10 tabel, koneksi berhasil |
+| Database `kamarin_test` ada | ✅ Sesuai | `docker exec kamarin-postgres psql -U kamarin -c "\l"` → `kamarin` dan `kamarin_test` keduanya ada |
+
+
+**`.env.example`**
+
+| Sub-poin | Status | Bukti |
+| --- | --- | --- |
+| `APP_TIMEZONE=Asia/Makassar` | ✅ Sesuai | Nilai tepat, sesuai keputusan user 2026-10-09. `php artisan config:show app.timezone` → `Asia/Makassar` |
+| `DB_CONNECTION=pgsql` dan `DB_*` lengkap | ✅ Sesuai | `host=127.0.0.1`, `port=5432`, `database/username/password=kamarin` |
+| `MAIL_MAILER=log` | ✅ Sesuai | Tertera eksplisit |
+| Tidak ada rahasia nyata | ✅ Sesuai | `APP_KEY=` dikosongkan; tidak ada token atau password produksi |
+| `.env` tidak ter-commit | ✅ Sesuai | `.gitignore` mencantumkan `.env`; `git ls-files --cached` tidak menemukan `.env` |
+
+**README.md**
+
+| Sub-poin | Status | Bukti |
+| --- | --- | --- |
+| Langkah setup | ✅ Sesuai | Tiga langkah jelas: `docker compose up -d`, `composer install`, `composer run setup` |
+| Ekstensi PHP yang dibutuhkan | ✅ Sesuai | `pdo_pgsql` disebutkan dengan versi terverifikasi |
+| Tabel versi | ✅ Sesuai | PHP 8.3.35, Laravel 13.35.0, PostgreSQL 18.6, Node/npm, Composer, Pest 4.7.8 |
+| Catatan SQLite sementara | ✅ Sesuai | README jujur: tes masih di SQLite `:memory:`; T-003 yang akan mengalihkan |
+
+**Aturan keras AGENTS.md**
+
+| Aturan | Status | Bukti |
+| --- | --- | --- |
+| #1 Skema: tidak ada migration di luar bawaan framework | ✅ Sesuai | Migration yang ada: 3 bawaan framework + 2 bawaan Fortify starter kit. Tidak ada migration domain Kamarin. Diizinkan aturan #13 |
+| #6 Kebijakan tidak di-hardcode: timezone lewat `.env` | ✅ Sesuai | `config/app.php` → `env('APP_TIMEZONE', 'UTC')` |
+| #8 Otorisasi: tanpa paket role-permission | ✅ Sesuai | `composer.json` tidak mengandung paket role-permission pihak ketiga |
+| #10 Tes memakai PostgreSQL | ⚠️ Penyimpangan sementara (tercatat jujur) | `phpunit.xml` masih `DB_CONNECTION=sqlite`, `DB_DATABASE=:memory:`. Builder mendelegasikan ke T-003 |
+| #11 Dependensi tanpa persetujuan | ✅ Sesuai | `laravel/sail`, `laravel/chisel`, `laravel/wayfinder` bawaan installer resmi — **disetujui user 2026-10-10**. Paket lain di luar installer tetap butuh persetujuan eksplisit |
+| #13 Fitur starter kit tidak dipakai harus dinonaktifkan | ❌ **Tidak sesuai — ditindaklanjuti di T-002** | `config/fortify.php` masih mengaktifkan `Features::registration()`, `Features::emailVerification()`, `Features::twoFactorAuthentication()`, `Features::passkeys()`. Halaman `register.tsx` masih ada. Akan dibuang di T-002 menggunakan `laravel/chisel` bila tersedia |
+
+**Tes (dijalankan sendiri oleh Reviewer)**
+
+```
+php artisan test --no-ansi
+→ 40 passed (138 assertions), 0 failed — 4139ms — Pest 4.7.8
+```
+
+✅ Semua lulus. Catatan: masih di SQLite `:memory:` (penyimpangan aturan #10, didelegasikan ke T-003).
+
+**Keputusan user (2026-10-10) setelah review:**
+- Volume `/var/lib/postgresql` tetap (benar untuk image 18; saran Reviewer ditolak karena salah).
+- Port diperbaiki ke `127.0.0.1:5432:5432` — **temuan ini terlewat oleh Reviewer, ditemukan user**. `compose.yaml` sudah diperbarui dan diverifikasi.
+- Paket bawaan installer resmi (`laravel/wayfinder`, `laravel/chisel`, `laravel/sail`) disetujui. Paket lain butuh izin.
+- Fitur starter kit yang tidak dipakai dibuang di T-002 menggunakan `laravel/chisel` bila tersedia.
+
+**Kesimpulan Reviewer (final):** T-001 memenuhi kriteria selesai di BACKLOG_FASE4_5.md setelah perbaikan port. Satu temuan kritis (port terbuka ke semua antarmuka) terlewat oleh Reviewer dan ditemukan user — dicatat sebagai kelemahan review. Satu penyimpangan aktif tersisa: fitur Fortify tidak dipakai masih aktif, ditindaklanjuti di T-002.
+
