@@ -36,7 +36,7 @@ Jika kode, permintaan user, dan dokumen saling bertentangan: **berhenti dan tany
 8. **Otorisasi:** tabel `roles` + `users.role_id` + Policy atau Gate. Jangan memasang paket role-permission kecuali user menyetujui.
 9. **Data keuangan** tidak boleh dikirim ke peran tanpa hak. Pengecekan dilakukan di server, bukan hanya disembunyikan di UI.
 10. **Tes memakai PostgreSQL, bukan SQLite.** Setiap aturan BR punya tes. Pakai ID kasus uji dari `docs/rencana_pengujian.md` sebagai nama atau komentar tes (mis. AV-03).
-11. **Dependensi:** jangan menambah paket tanpa persetujuan user. Verifikasi versi dan kompatibilitas dengan Laravel 13 lewat Composer, npm, dan dokumentasi resmi. Jangan menebak versi atau perintah.
+11. **Dependensi:** jangan menambah paket tanpa persetujuan user. Verifikasi versi dan kompatibilitas dengan Laravel 13 lewat Composer, npm, dan dokumentasi resmi. Jangan menebak versi atau perintah. Paket yang dibawa installer resmi untuk opsi yang dipilih (mis. `laravel/wayfinder`, `laravel/chisel`, `laravel/sail`) dianggap sudah disetujui. Paket lain, termasuk dev dependency, butuh persetujuan.
 12. **Data dan rahasia:** tanpa data pribadi nyata. `guests.id_number` dikosongkan pada seeder. Jangan commit `.env` atau rahasia apa pun, hanya `.env.example`.
 13. **Bawaan framework dan starter kit:** tabel framework (`migrations`, `jobs`, `failed_jobs`, `sessions`, `cache`, `password_reset_tokens`) dan kolom bawaan pada `users` (`remember_token`, `email_verified_at`, timestamp) diizinkan di luar ERD. Fitur starter kit yang tidak dipakai (registrasi publik, 2FA, verifikasi email, teams, WorkOS) dinonaktifkan atau dibuang, termasuk migration dan kolomnya, dan referensi rutenya di frontend dihapus karena build gagal jika masih ada. Login, logout, dan reset password dipertahankan.
 
@@ -45,7 +45,8 @@ Jika kode, permintaan user, dan dokumen saling bertentangan: **berhenti dan tany
 - PHP, Composer, dan Node berjalan lokal. Hanya PostgreSQL yang berjalan di Docker (compose), dengan satu database untuk development dan satu database terpisah untuk tes.
 - Perintah dan versi diverifikasi dari dokumentasi resmi Laravel 13. Server, queue worker, dan Vite dijalankan lewat skrip `composer run dev` (verifikasi isinya di `composer.json`). Scheduler dijalankan terpisah dengan `php artisan schedule:work` saat dibutuhkan.
 - Docker Desktop harus berjalan. Cek dengan `docker info`. Jika tidak berjalan, jalankan atau minta user.
-- Zona waktu aplikasi: `Asia/Jakarta` (sementara) lewat `.env`.
+- `compose.yaml`: port database hanya di-bind ke `127.0.0.1` (bukan semua antarmuka). Volume data PostgreSQL 18 di-mount ke `/var/lib/postgresql`, bukan `/var/lib/postgresql/data`, sesuai dokumentasi image resmi untuk versi 18 ke atas. Jangan diubah.
+- Zona waktu aplikasi: `Asia/Makassar` lewat `APP_TIMEZONE` di `.env` (keputusan user, final).
 - Jangan menjalankan `npm` atau `composer` untuk folder yang sama dari dua lingkungan berbeda (mis. Windows dan WSL), karena `node_modules` dan `vendor` bisa bentrok.
 
 ## Cara kerja
@@ -60,7 +61,7 @@ Jika kode, permintaan user, dan dokumen saling bertentangan: **berhenti dan tany
 ## Peran agent
 
 - **Builder:** mengimplementasikan satu tugas sampai Definition of Done.
-- **Reviewer:** membaca diff terhadap dokumen sumber, menjalankan tes, dan melaporkan ketidaksesuaian (nama kolom, aturan, kasus uji yang terlewat). Tidak mengedit kode kecuali diminta. Agent yang menulis kode tidak me-review kodenya sendiri.
+- **Reviewer:** membaca diff terhadap dokumen sumber, menjalankan tes, dan melaporkan ketidaksesuaian (nama kolom, aturan, kasus uji yang terlewat). Tidak mengedit kode kecuali diminta. Agent yang menulis kode tidak me-review kodenya sendiri. Setiap rekomendasi perubahan yang menyangkut versi, konfigurasi infrastruktur, atau keamanan harus disertai sumber dokumentasi resmi, bukan dari ingatan. Tandai juga paparan jaringan, misalnya port yang terbuka ke luar komputer.
 
 ## Definition of Done
 
