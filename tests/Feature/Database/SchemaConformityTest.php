@@ -18,8 +18,8 @@ use Illuminate\Support\Facades\DB;
 |
 */
 
-/** Tables migrated in stage 1 (T-004, master data). */
-function erdMasterTables(): array
+/** Tables migrated so far. Stage 2 (T-005) completed the set: all 19 ERD tables now exist. */
+function erdMigratedTables(): array
 {
     return [
         'roles',
@@ -33,13 +33,6 @@ function erdMasterTables(): array
         'guests',
         'booking_sources',
         'rates',
-    ];
-}
-
-/** Explicit exceptions: transaction tables not migrated until T-005. */
-function erdTransactionExceptions(): array
-{
-    return [
         'room_blocks',
         'bookings',
         'booking_items',
@@ -49,6 +42,17 @@ function erdTransactionExceptions(): array
         'booking_status_logs',
         'booking_change_logs',
     ];
+}
+
+/**
+ * Explicit exceptions: transaction tables not migrated until T-005.
+ *
+ * Emptied by T-005 (2026-10-11): every ERD table is now migrated, so the
+ * list stays empty and this function only documents the history.
+ */
+function erdTransactionExceptions(): array
+{
+    return [];
 }
 
 /** Framework tables allowed outside the ERD (AGENTS.md rule 13). */
@@ -210,7 +214,7 @@ function pgUniqueIndexColumns(string $table): array
 it('creates every master table from the ERD with matching columns, types and nullability', function () {
     $erd = parseErdSchema();
 
-    foreach (erdMasterTables() as $table) {
+    foreach (erdMigratedTables() as $table) {
         $entity = strtoupper($table);
         $columns = pgColumns($table);
 
@@ -269,7 +273,7 @@ it('keeps the users table in sync with the ERD plus rule 13 allowances', functio
 it('rejects any column outside the ERD except rule 13 allowances', function () {
     $erd = parseErdSchema();
 
-    foreach (erdMasterTables() as $table) {
+    foreach (erdMigratedTables() as $table) {
         $entity = strtoupper($table);
         $expected = [
             ...array_keys($erd[$entity]),
@@ -308,6 +312,7 @@ it('enforces the unique constraints marked in the ERD', function () {
         'amenities' => ['name'],
         'booking_sources' => ['name'],
         'housekeeping_statuses' => ['room_id'],
+        'bookings' => ['booking_code'],
     ];
 
     foreach ($single as $table => $columns) {
@@ -351,6 +356,7 @@ it('creates the foreign keys declared in the ERD', function () {
     }
 
     $expected = [
+        // Master tables (T-004)
         'users.role_id->roles',
         'users.property_id->properties',
         'room_types.property_id->properties',
@@ -362,6 +368,25 @@ it('creates the foreign keys declared in the ERD', function () {
         'housekeeping_statuses.updated_by_user_id->users',
         'rates.property_id->properties',
         'rates.room_type_id->room_types',
+        // Transaction tables (T-005)
+        'room_blocks.room_id->rooms',
+        'room_blocks.created_by_user_id->users',
+        'bookings.property_id->properties',
+        'bookings.guest_id->guests',
+        'bookings.created_by_user_id->users',
+        'bookings.booking_source_id->booking_sources',
+        'booking_items.booking_id->bookings',
+        'booking_items.room_id->rooms',
+        'booking_nights.booking_item_id->booking_items',
+        'booking_nights.room_id->rooms',
+        'booking_nights.rate_id->rates',
+        'booking_charges.booking_id->bookings',
+        'payments.booking_id->bookings',
+        'payments.recorded_by_user_id->users',
+        'booking_status_logs.booking_id->bookings',
+        'booking_status_logs.changed_by_user_id->users',
+        'booking_change_logs.booking_id->bookings',
+        'booking_change_logs.changed_by_user_id->users',
     ];
 
     foreach ($expected as $foreignKey) {
@@ -369,19 +394,36 @@ it('creates the foreign keys declared in the ERD', function () {
     }
 });
 
-it('stores money as whole rupiah decimal(12,0)', function () {
-    $price = pgColumns('rates')->get('price');
+it('stores every money column as whole rupiah decimal(12,0)', function () {
+    $erd = parseErdSchema();
+    $checked = 0;
 
-    expect($price->data_type)->toBe('numeric')
-        ->and((int) $price->numeric_precision)->toBe(12)
-        ->and((int) $price->numeric_scale)->toBe(0);
+    foreach (erdMigratedTables() as $table) {
+        $columns = pgColumns($table);
+
+        foreach ($erd[strtoupper($table)] as $name => $meta) {
+            if ($meta['type'] !== 'decimal') {
+                continue;
+            }
+
+            $checked++;
+
+            expect($columns[$name]->data_type)->toBe('numeric', "Money column [{$table}.{$name}] must be numeric")
+                ->and((int) $columns[$name]->numeric_precision)->toBe(12, "Money column [{$table}.{$name}] precision must be 12")
+                ->and((int) $columns[$name]->numeric_scale)->toBe(0, "Money column [{$table}.{$name}] scale must be 0 (whole rupiah)");
+        }
+    }
+
+    // Guard: rates.price, bookings.total_amount, booking_items.subtotal,
+    // booking_nights.price, booking_charges.amount, payments.amount.
+    expect($checked)->toBe(6);
 });
 
 it('applies every default value declared in the ERD', function () {
     $erd = parseErdSchema();
     $checked = 0;
 
-    foreach (erdMasterTables() as $table) {
+    foreach (erdMigratedTables() as $table) {
         $columns = pgColumns($table);
 
         foreach ($erd[strtoupper($table)] as $name => $meta) {
@@ -400,16 +442,4 @@ it('applies every default value declared in the ERD', function () {
     // Guard: the parser must actually find the six property policy defaults,
     // otherwise the loop above would pass vacuously.
     expect($checked)->toBe(6);
-});
-
-it('has not migrated the transaction tables yet (explicit exceptions until T-005)', function () {
-    foreach (erdTransactionExceptions() as $table) {
-        $exists = DB::selectOne("
-            SELECT to_regclass('public.' || ?) AS regclass
-        ", [$table]);
-
-        expect($exists->regclass)->toBeNull(
-            "Table [{$table}] must stay in the explicit exceptions list until T-005 empties it"
-        );
-    }
 });
