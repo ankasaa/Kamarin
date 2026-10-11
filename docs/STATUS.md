@@ -10,14 +10,15 @@ Diperbarui terakhir: 2026-10-11
 
 Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi minimal:
 
-- Tugas dan cabang: T-004, `task/T-004-master-migrations` (dari `main` setelah T-002 di-merge dengan squash-merge `2d1233c`, lalu di atasnya commit arsip `026c9d5`)
+- Tugas dan cabang: T-004, `task/T-004-master-migrations` (dari `main` setelah T-002 di-merge dengan squash-merge `2d1233c`, lalu di atasnya commit arsip `026c9d5`; amandemen ERD: `379f180` + `3177e2c`)
 - Status: selesai
-- Hasil verifikasi akhir (dijalankan mandiri, bukan klaim): `php artisan migrate:fresh` di development sukses — 11 tabel master + 2 tabel framework; **33 tes lulus, 0 gagal** (456 assert) di PostgreSQL `kamarin_test` (24 tes lama + 9 tes kesesuaian skema baru); `composer run lint:check` (Pint) lulus; keluaran `\d users`, `\d rooms`, `\d rates`, `\d properties` persis ERD v2.1 (tempelan di log T-004)
+- Hasil verifikasi akhir (dijalankan mandiri, bukan klaim): `php artisan migrate:fresh` di development sukses — 11 tabel master + 2 tabel framework; **33 tes lulus, 0 gagal** (458 assert) di PostgreSQL `kamarin_test` (24 tes lama + 9 tes kesesuaian skema, lulus terhadap ERD hasil revisi user); `composer run lint:check` (Pint) lulus; keluaran `\d users`, `\d rooms`, `\d rates`, `\d properties`, `\d guests`, `\d housekeeping_statuses` persis ERD v2.1 (tempelan di log T-004 + amandemen)
 - Yang dibuat: 10 migration baru (`2026_10_11_000001`..`000011`) — roles, properties, room_types, rooms, amenities, room_type_amenities, housekeeping_statuses, guests, booking_sources, rates. Migration `users` bawaan dimodifikasi di tempat dan **diganti nama filenya** menjadi `2026_10_11_000003_create_users_table.php` (diizinkan backlog) agar urutannya setelah `roles` dan `properties`; kolom baru: `role_id` (FK not null), `property_id` (FK nullable), `is_active`. Model `Role` + `RoleFactory` baru; `UserFactory` diperbarui agar 24 tes lama tetap lulus
+- Amandemen 2026-10-11 (ERD direvisi user): 9 kolom master menjadi nullable (`roles.description`, `properties.phone`, `room_types.description`, `rooms.floor`, `amenities.icon`, `housekeeping_statuses.notes`, `guests.email`/`phone`/`country`) dan default `properties.pending_expiry_hours` 24 → **3**; migration diedit di tempat, tes kesesuaian skema **dikencangkan** (default dibaca langsung dari ERD, bukan hardcoded; unique `housekeeping_statuses.room_id` masuk daftar periksa — ketika itu membuka bug: `->unique()` setelah `->constrained()` tidak pernah membuat unique index, sudah diperbaiki). Detail + keluaran di bagian "Amandemen 2026-10-11" pada entri log T-004
 - Pengaman utama: `tests/Feature/Database/SchemaConformityTest.php` mem-parsing `docs/erd_v2_1.mermaid` lalu membandingkannya dengan `information_schema` PostgreSQL: nama tabel, nama kolom, tipe data, nullability, primary key, unique, foreign key, `decimal(12,0)` untuk uang, dan default kebijakan properti. Tabel atau kolom di luar ERD **ditolak**, kecuali yang diizinkan aturan 13 (tabel framework; kolom `users`: `email_verified_at`, `remember_token`, timestamps)
 - Daftar pengecualian eksplisit — 8 tabel transaksi, sengaja belum dimigrasi, **dikosongkan di T-005**: `room_blocks`, `bookings`, `booking_items`, `booking_nights`, `booking_charges`, `payments`, `booking_status_logs`, `booking_change_logs`. Tes memastikan kedelapannya belum ada
 - File kunci untuk di-review (path): `database/migrations/2026_10_11_000001_create_roles_table.php` .. `000011_create_rates_table.php`, `database/migrations/2026_10_11_000003_create_users_table.php`, `tests/Feature/Database/SchemaConformityTest.php`, `app/Models/Role.php`, `database/factories/RoleFactory.php`, `database/factories/UserFactory.php`, `app/Models/User.php`
-- Pertanyaan yang butuh keputusan: `housekeeping_statuses.notes` menjadi NOT NULL karena di ERD tidak ditandai nullable — konsekuensinya setiap baris status kebersihan wajib mengisi catatan. Apakah memang dimaksud, atau seharusnya nullable? (tidak memblokir; detail di "Pertanyaan terbuka dari agent", entri T-004)
+- Pertanyaan yang butuh keputusan: **tidak ada** — pertanyaan `housekeeping_statuses.notes` NOT NULL sudah dijawab user (dibuat nullable, ERD direvisi 2026-10-11, migration mengikuti)
 
 ---
 
@@ -52,9 +53,9 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 
 ## Pertanyaan terbuka dari agent
 
-### 2026-10-11, T-004 — Satu pertanyaan skema (tidak memblokir)
+### 2026-10-11, T-004 — Satu pertanyaan skema (SELESAI - sudah dijawab user)
 
-1. **`housekeeping_statuses.notes` NOT NULL.** Dokumen yang dirujuk: `docs/erd_v2_1.mermaid`, blok `HOUSEKEEPING_STATUSES` — kolom `text notes` tidak ditandai `"nullable"`, dan konvensi ERD menandai kolom opsional secara eksplisit (mis. `updated_by_user_id FK "nullable"`, `id_type "opsional"`). Migration T-004 karena itu membuatnya NOT NULL, dan tes kesesuaian skema mengunci perilaku ini. Konsekuensi: setiap baris status kebersihan (dibuat saat kamar di-seed dan setiap kali staf mengubah status) wajib mengisi teks catatan. Kalau maksudnya catatan opsional, cukup tambahkan `->nullable()` di migration `000008` dan ubah penanda ERD menjadi `"nullable"` — perubahan kecil di dua file, belum ada data yang perlu dimigrasi. Rekomendasi agent: buat nullable (catatan housekeeping harian yang selalu wajib diisi merepotkan staf), tapi ikuti keputusan user karena ERD adalah sumber kebenaran dan sedang dibekukan.
+1. **`housekeeping_statuses.notes` (SELESAI 2026-10-11):** Pertanyaan awal: kolom ini jadi NOT NULL karena di ERD tidak ditandai nullable. **Keputusan user: dibuat nullable.** ERD v2.1 direvisi user pada hari yang sama (penanda nullable dirapikan untuk 9 kolom master, `properties.pending_expiry_hours` default menjadi 3) dan migration T-004 mengikuti. Tes kesesuaian skema tidak dilonggarkan — justru dikencangkan (default dibaca dari ERD; unique `room_id` 1:1 ikut diperiksa, ketika itu membuka bug index yang tidak pernah terbentuk). Rincian di entri log T-004, bagian "Amandemen 2026-10-11".
 
 Entri T-001, T-002, dan T-003 dipindahkan ke `docs/STATUS_ARCHIVE.md` (semua sudah terjawab user). Entri baru ditambahkan di bawah ini.
 
@@ -227,6 +228,119 @@ Entri terbaru di atas. Template:
   - `decimal('price', 12, 0)` — Laravel Blueprint decimal precision/scale; BR bagian 1 "Mata uang: Rupiah (IDR), bilangan bulat tanpa desimal"
   - `foreignId(...)->constrained(...)` untuk FK bigint; unique gabungan `$table->unique([...])` — Laravel Schema Builder (laravel.com/docs/13.x/migrations)
 - Penjelasan untuk sidang (bagaimana dan kenapa): Tahap 1 migration membangun seluruh data master (role, properti beserta kebijakannya, tipe kamar, kamar, fasilitas, housekeeping, tamu, sumber booking, tarif) persis mengikuti ERD v2.1, sementara tabel transaksi ditunda ke T-005 dan dicatat dalam daftar pengecualian yang terbukti lewat tes, bukan sekadar janji di dokumen. Yang membedakan tugas ini dari migration biasa adalah tes kesesuaian skema: file ERD di-parsing otomatis lalu dibandingkan dengan `information_schema` PostgreSQL, sehingga selisih apa pun — tabel hilang, kolom salah tipe, nullable meleset, unique/foreign key lupa — langsung menggagalkan suite dan tidak bisa terbawa ke Fase berikutnya. Migration users yang lama dimodifikasi di tempat dan namanya diganti agar urutannya benar (roles dan properties harus ada sebelum users memakai keduanya), yang dimungkinkan karena belum ada data produksi. Selama pengembangan, tes merah ini dua kali menangkap kesalahan nyata (lupa timestamps di tiga tabel; penanda nullable ERD yang beragam kata), yang membuktikan pengamannya bekerja. Karena registrasi publik sudah dibuang di T-002, satu-satunya cara membuat user di tes adalah factory — karena itu `UserFactory` kini menempelkan role lewat factory baru, dan seeder berisi nama role asli menyusul di T-007.
+- **Amandemen 2026-10-11 — ERD direvisi user (nullable dirapikan, default expiry 3 jam):**
+  - Perubahan ERD (commit `379f180`): 9 kolom master ditandai nullable — `roles.description`, `properties.phone`, `room_types.description`, `rooms.floor`, `amenities.icon`, `housekeeping_statuses.notes`, `guests.email` ("nullable, kosong untuk sebagian booking OTA"), `guests.phone`, `guests.country` — dan `properties.pending_expiry_hours` default 24 → **3**. ERD juga menandai ulang tabel transaksi (**catatan untuk T-005**): `bookings.booking_source_id` kini **wajib** (penanda nullable dilepas), sementara `bookings.notes`, `payments.payer_name`, `payments.reference_number`, `booking_status_logs.old_status`, dan `booking_status_logs.note` ditandai nullable. Karena tabel transaksi belum dimigrasi di T-004, perubahan ini belum berdampak ke skema — harus dipakai saat migration T-005 ditulis.
+  - Migration diedit di tempat (commit `3177e2c`): `->nullable()` pada 9 kolom di atas dan `pending_expiry_hours` default menjadi 3. Belum ada data produksi, jadi tidak ada migration tambahan.
+  - Tes **dikencangkan, bukan dilonggarkan** — tiga perbaikan sekaligus, dua di antaranya menangkap bug nyata:
+    1. Tes default kini **ERD-driven**: parser mengekstrak marker `default X` dari file ERD lalu memeriksa setiap kolom master yang punya default di database. Angka hardcoded (`14:00`, `50`, `24`, dst.) dihapus dari tes, jadi revisi default berikutnya otomatis ikut teruji. Guard `expect($checked)->toBe(6)` mencegah tes lulus tanpa memeriksa apa pun.
+    2. Unique `housekeeping_statuses.room_id` ("unique, 1:1 dengan room" di ERD) masuk daftar periksa → **membuka bug nyata pada migration asli**: `foreignId('room_id')->constrained('rooms')->unique()` tidak pernah membuat unique index, karena `constrained()` mengembalikan objek definisi FK sehingga `->unique()` setelahnya menjadi atribut percuma di FK, bukan modifier kolom. Diperbaiki menjadi `->unique()->constrained('rooms')`.
+    3. Bug API Pest yang sama seperti fase awal tugas (`toContain` tidak menerima argumen pesan) muncul lagi di tes baru dan diperbaiki dengan `str_contains` + `toBeTrue(pesan)`.
+  - Jalur merah → hijau terhadap ERD baru: run pertama **gagal 3 tes** (`notes` masih NOT NULL di database tes, unique `room_id` tidak ada, tes default belum cocok) — bukti pengaman bereaksi terhadap perubahan skema; setelah perbaikan, 9/9 tes skema lulus.
+  - `migrate:fresh` di database development (jalur penuh, EXIT=0 — run pertama kali di tugas ini tanpa terpotong pipe tampilan):
+
+    ```
+    PS> php artisan migrate:fresh --force
+     Dropping all tables .. 134.68ms DONE
+     INFO Preparing database.
+     Creating migration table .. 18.70ms DONE
+     INFO Running migrations.
+     0001_01_01_000001_create_cache_table .. 31.00ms DONE
+     0001_01_01_000002_create_jobs_table .. 36.48ms DONE
+     2026_10_11_000001_create_roles_table .. 11.13ms DONE
+     2026_10_11_000002_create_properties_table .. 8.73ms DONE
+     2026_10_11_000003_create_users_table .. 52.64ms DONE
+     2026_10_11_000004_create_room_types_table .. 14.81ms DONE
+     2026_10_11_000005_create_rooms_table .. 51.44ms DONE
+     2026_10_11_000006_create_amenities_table .. 33.50ms DONE
+     2026_10_11_000007_create_room_type_amenities_table .. 21.01ms DONE
+     2026_10_11_000008_create_housekeeping_statuses_table .. 19.94ms DONE
+     2026_10_11_000009_create_guests_table .. 8.12ms DONE
+     2026_10_11_000010_create_booking_sources_table .. 10.11ms DONE
+     2026_10_11_000011_create_rates_table .. 17.94ms DONE
+    EXIT=0
+    ```
+
+  - Hasil `\d properties` (perubahan: `phone` nullable, `pending_expiry_hours` default `'3'::smallint`):
+
+    ```
+                                               Table "public.properties"
+            Column        |              Type              | Collation | Nullable |                Default
+    ----------------------+--------------------------------+-----------+----------+----------------------------------------
+     id                   | bigint                         |           | not null | nextval('properties_id_seq'::regclass)
+     name                 | character varying(255)         |           | not null |
+     address              | text                           |           | not null |
+     city                 | character varying(255)         |           | not null |
+     phone                | character varying(255)         |           |          |
+     check_in_time        | time(0) without time zone      |           | not null | '14:00:00'::time without time zone
+     check_out_time       | time(0) without time zone      |           | not null | '12:00:00'::time without time zone
+     deposit_percent      | smallint                       |           | not null | '50'::smallint
+     pending_expiry_hours | smallint                       |           | not null | '3'::smallint
+     free_cancel_days     | smallint                       |           | not null | '2'::smallint
+     no_show_cutoff_time  | time(0) without time zone      |           | not null | '22:00:00'::time without time zone
+     created_at           | timestamp(0) without time zone |           |          |
+     updated_at           | timestamp(0) without time zone |           |          |
+    Indexes:
+        "properties_pkey" PRIMARY KEY, btree (id)
+    Referenced by:
+        TABLE "rates" CONSTRAINT "rates_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
+        TABLE "room_types" CONSTRAINT "room_types_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
+        TABLE "rooms" CONSTRAINT "rooms_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
+        TABLE "users" CONSTRAINT "users_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
+    ```
+
+  - Hasil `\d guests` (`email`, `phone`, `country` kini nullable — hanya `name` yang wajib selain kolom sistem):
+
+    ```
+                                              Table "public.guests"
+       Column   |              Type              | Collation | Nullable |              Default
+    ------------+--------------------------------+-----------+----------+------------------------------------
+     id         | bigint                         |           | not null | nextval('guests_id_seq'::regclass)
+     name       | character varying(255)         |           | not null |
+     email      | character varying(255)         |           |          |
+     phone      | character varying(255)         |           |          |
+     country    | character varying(255)         |           |          |
+     id_type    | character varying(255)         |           |          |
+     id_number  | character varying(255)         |           |          |
+     deleted_at | timestamp(0) without time zone |           |          |
+     created_at | timestamp(0) without time zone |           |          |
+     updated_at | timestamp(0) without time zone |           |          |
+    Indexes:
+        "guests_pkey" PRIMARY KEY, btree (id)
+    ```
+
+  - Hasil `\d housekeeping_statuses` (`notes` nullable; unique `room_id` kini benar-benar terbentuk setelah perbaikan urutan fluent):
+
+    ```
+                                              Table "public.housekeeping_statuses"
+           Column       |              Type              | Collation | Nullable |              Default
+    --------------------+--------------------------------+-----------+----------+------------------------------------
+     id                 | bigint                         |           | not null | nextval('housekeeping_statuses_id_seq'::regclass)
+     room_id            | bigint                         |           | not null |
+     updated_by_user_id | bigint                         |           |          |
+     status             | character varying(255)         |           | not null |
+     notes              | text                           |           |          |
+     created_at         | timestamp(0) without time zone |           |          |
+     updated_at         | timestamp(0) without time zone |           |          |
+    Indexes:
+        "housekeeping_statuses_pkey" PRIMARY KEY, btree (id)
+        "housekeeping_statuses_room_id_unique" UNIQUE CONSTRAINT, btree (room_id)
+    Foreign-key constraints:
+        "housekeeping_statuses_room_id_foreign" FOREIGN KEY (room_id) REFERENCES rooms(id)
+        "housekeeping_statuses_updated_by_user_id_foreign" FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
+    ```
+
+  - Seluruh suite di `kamarin_test` setelah amandemen:
+
+    ```
+    PS> php artisan test
+    {"tool":"pest","result":"passed","tests":33,"passed":33,"assertions":458,"duration_ms":4846}
+    EXIT=0
+    PS> composer run lint:check
+    {"tool":"pint","result":"passed"}
+    EXIT=0
+    ```
+
+  - Keputusan user atas pertanyaan T-004: **`notes` dibuat nullable** (selesai; ERD dan migration selaras, tidak ada pertanyaan tersisa dari tugas ini).
 
 ### Tugas yang sudah selesai (diarsipkan)
 
