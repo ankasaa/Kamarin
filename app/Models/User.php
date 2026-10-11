@@ -12,10 +12,13 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
+ * @property int $role_id
+ * @property int|null $property_id
  * @property string $name
  * @property string $email
- * @property Carbon|null $email_verified_at
  * @property string $password
+ * @property bool $is_active
+ * @property Carbon|null $email_verified_at
  * @property string|null $remember_token
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -35,6 +38,7 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
+            'is_active' => 'boolean',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
