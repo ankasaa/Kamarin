@@ -17,7 +17,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('property_id')->constrained('properties');
             $table->string('name');
-            $table->text('description');
+            $table->text('description')->nullable();
             $table->integer('capacity');
             $table->boolean('is_active');
             $table->timestamps();

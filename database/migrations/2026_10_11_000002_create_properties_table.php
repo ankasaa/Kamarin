@@ -19,11 +19,11 @@ return new class extends Migration
             $table->string('name');
             $table->text('address');
             $table->string('city');
-            $table->string('phone');
+            $table->string('phone')->nullable();
             $table->time('check_in_time')->default('14:00');
             $table->time('check_out_time')->default('12:00');
             $table->smallInteger('deposit_percent')->default(50);
-            $table->smallInteger('pending_expiry_hours')->default(24);
+            $table->smallInteger('pending_expiry_hours')->default(3);
             $table->smallInteger('free_cancel_days')->default(2);
             $table->time('no_show_cutoff_time')->default('22:00');
             $table->timestamps();

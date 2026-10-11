@@ -20,7 +20,7 @@ return new class extends Migration
             $table->foreignId('property_id')->constrained('properties');
             $table->foreignId('room_type_id')->constrained('room_types');
             $table->string('room_number');
-            $table->integer('floor');
+            $table->integer('floor')->nullable();
             $table->string('status');
             $table->unique(['property_id', 'room_number']);
             $table->timestamps();

@@ -147,6 +147,8 @@ function parseErdSchema(): array
             'primary' => str_contains($comment, 'PK'),
             'unique_group' => preg_match('/UK dengan (\w+)/', $comment, $uk) ? $uk[1] : null,
             'unique_alone' => str_contains($comment, 'UK') && ! str_contains($comment, 'UK dengan'),
+            // Declared default, e.g. "default 14:00" or "default 3".
+            'default' => preg_match('/default\s+([0-9:]+)/', $comment, $dv) ? $dv[1] : null,
         ];
     }
 
@@ -305,6 +307,7 @@ it('enforces the unique constraints marked in the ERD', function () {
         'users' => ['email'],
         'amenities' => ['name'],
         'booking_sources' => ['name'],
+        'housekeeping_statuses' => ['room_id'],
     ];
 
     foreach ($single as $table => $columns) {
@@ -374,15 +377,29 @@ it('stores money as whole rupiah decimal(12,0)', function () {
         ->and((int) $price->numeric_scale)->toBe(0);
 });
 
-it('applies the property setting defaults from the ERD', function () {
-    $columns = pgColumns('properties');
+it('applies every default value declared in the ERD', function () {
+    $erd = parseErdSchema();
+    $checked = 0;
 
-    expect($columns['check_in_time']->column_default)->toContain('14:00')
-        ->and($columns['check_out_time']->column_default)->toContain('12:00')
-        ->and($columns['deposit_percent']->column_default)->toContain('50')
-        ->and($columns['pending_expiry_hours']->column_default)->toContain('24')
-        ->and($columns['free_cancel_days']->column_default)->toContain('2')
-        ->and($columns['no_show_cutoff_time']->column_default)->toContain('22:00');
+    foreach (erdMasterTables() as $table) {
+        $columns = pgColumns($table);
+
+        foreach ($erd[strtoupper($table)] as $name => $meta) {
+            if ($meta['default'] === null) {
+                continue;
+            }
+
+            $checked++;
+
+            expect(str_contains((string) $columns[$name]->column_default, $meta['default']))->toBeTrue(
+                "Column [{$table}.{$name}] must default to [{$meta['default']}] per the ERD"
+            );
+        }
+    }
+
+    // Guard: the parser must actually find the six property policy defaults,
+    // otherwise the loop above would pass vacuously.
+    expect($checked)->toBe(6);
 });
 
 it('has not migrated the transaction tables yet (explicit exceptions until T-005)', function () {
