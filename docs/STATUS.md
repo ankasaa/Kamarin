@@ -2,7 +2,7 @@
 
 File hidup. Agent memperbarui bagian "Log tugas" setelah **setiap** tugas. Bagian "Ringkasan untuk Claude" disalin atau diunggah ke chat Claude saat meminta review atau saran, supaya tidak perlu menempelkan seluruh repo.
 
-Diperbarui terakhir: 2026-10-10
+Diperbarui terakhir: 2026-10-11
 
 ---
 
@@ -10,12 +10,12 @@ Diperbarui terakhir: 2026-10-10
 
 Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi minimal:
 
-- Tugas dan cabang: T-001, `task/T-001-setup-environment`
+- Tugas dan cabang: T-003, `task/T-003-tests-on-postgres` (dari `main` setelah T-001 di-merge)
 - Status: selesai
-- Hasil tes: 40 tes bawaan Pest lulus, 0 gagal (138 assert). Catatan jujur: tes bawaan masih memakai SQLite `:memory:` sesuai default `phpunit.xml`; pengalihan ke PostgreSQL `kamarin_test` dikerjakan di T-003
-- File kunci untuk di-review (path): `compose.yaml`, `docker/postgresql/init-test-db.sql`, `.env.example`, `config/app.php` (timezone env), `README.md`
-- Penyimpangan dari dokumen sumber (jika ada): `config/app.php` skeleton awalnya hardcode `'timezone' => 'UTC'`, diubah menjadi `env('APP_TIMEZONE', 'UTC')` agar memenuhi syarat "timezone lewat `.env`". `laravel/sail` tetap ada di `require-dev` (bawaan skeleton, tidak dipakai)
-- Pertanyaan yang butuh keputusan: AGENTS.md bagian Lingkungan masih menulis zona waktu "Asia/Jakarta (sementara)", sedangkan jawaban user 2026-10-09 memutuskan **Asia/Makassar (fix)** — yang dipakai di `.env`. Minta user memperbarui AGENTS.md agar konsisten
+- Hasil tes: **40 lulus, 0 gagal** (138 assert) di PostgreSQL `kamarin_test`. Pengaman terbukti: saat `DB_DATABASE=kamarin`, 40/40 tes gagal dengan pesan guard sebelum ada migrasi/penghapusan; database development utuh (10 tabel, users=0, sessions=2). Helper `freezeNow()` terverifikasi dengan tes probe sementara 3/3 lulus (file probe dihapus setelah verifikasi)
+- File kunci untuk di-review (path): `phpunit.xml`, `tests/TestCase.php` (pengaman `_test`), `tests/Pest.php` (helper + hook global), `README.md`
+- Penyimpangan dari dokumen sumber: tidak ada. Catatan: hook `beforeEach()`/`afterEach()` telanjang di `Pest.php` terbukti tidak dieksekusi di Pest 4.7.8; dipakai API `pest()->beforeEach(...)` sesuai dokumentasi resmi (pestphp.com/docs/global-hooks)
+- Pertanyaan yang butuh keputusan: (1) `.github/workflows/tests.yml` bawaan starter kit menjalankan CI tanpa PostgreSQL — kalau GitHub Actions diaktifkan, CI akan gagal karena tes kini wajib PostgreSQL; perlu ditambah service Postgres di workflow, dinonaktifkan, atau dibiarkan. (2) Database development masih berisi 10 tabel framework sisa verifikasi T-001 (0 baris bisnis); kalau ingin benar-benar kosong, jalankan `php artisan migrate:rollback` atau `docker compose down -v`.
 
 ---
 
@@ -25,7 +25,7 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 | --- | --- |
 | Fase 2 (aturan bisnis) | Selesai: `docs/business_rules_kamarin.md` v1.1, keputusan K1 sampai K10 disetujui |
 | Fase 3 (perancangan) | Dokumen selesai dan disetujui. Wireframe Figma masih dikerjakan user |
-| Fase 4 (setup) | Berjalan: T-001 selesai (2026-10-10), T-002 dan T-003 menyusul |
+| Fase 4 (setup) | Berjalan: T-001 dan T-003 selesai (tes di PostgreSQL), T-002 menyusul |
 | ERD | v2.1, dibekukan |
 
 ## Keputusan yang sudah dikunci
@@ -48,6 +48,11 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 | Paket ekspor laporan | PDF atau Excel, satu format | Perlu diverifikasi |
 
 ## Pertanyaan terbuka dari agent
+
+### 2026-10-11, T-003 — Dua catatan lanjutan (tidak memblokir)
+
+1. **CI GitHub.** Dokumen yang dirujuk: `.github/workflows/tests.yml` (bawaan starter kit). Workflow menjalankan `composer setup` (yang menjalankan `migrate`) lalu `composer ci:check` tanpa layanan PostgreSQL. Dengan tes kini wajib PostgreSQL, CI akan gagal jika GitHub Actions diaktifkan. Opsi: (a) tambahkan service `postgres` di workflow beserta env `kamarin_test`, (b) nonaktifkan/hapus workflow sampai ada kebutuhan deploy, (c) biarkan sampai Fase 11. Rekomendasi agent: (b) atau (c) — CI bukan bagian Definition of Done tugas saat ini.
+2. **Isi database development.** Saat bukti pengaman T-003 dijalankan, `kamarin` holds 10 tabel framework sisa verifikasi T-001 (users=0, sessions=2) — bukan kosong murni, seperti yang diasumsikan instruksi. Tidak berbahaya (guard membuktikan tabel tidak tersentuh). Kalau ingin benar-benar kosong: `php artisan migrate:rollback` atau `docker compose down -v` (menghapus kedua database dan volume). Rekomendasi agent: biarkan.
 
 ### 2026-10-09, T-001 — Hasil pemeriksaan prasyarat dan keputusan yang dibutuhkan
 
@@ -113,6 +118,66 @@ Entri terbaru di atas. Template:
 - Penjelasan untuk sidang (3-5 kalimat, bagaimana dan kenapa):
 - Reviewer: (agent lain atau Claude) dan hasilnya
 ```
+
+### T-003 Tes pindah ke PostgreSQL, pengaman database, dan pembeku waktu (2026-10-11)
+
+- Cabang: `task/T-003-tests-on-postgres` (dari `main` setelah T-001 di-merge)
+- Status: selesai
+- Yang dikerjakan:
+  - `phpunit.xml`: `DB_CONNECTION=sqlite`/`:memory:` diganti `DB_CONNECTION=pgsql`, `DB_DATABASE=kamarin_test`. Host, port, username, dan password diambil dari `.env` (satu server yang sama), jadi tidak ada kredensial ganda.
+  - Pengaman di `tests/TestCase.php`: `setUp()` memanggil `guardTestDatabase()` **sebelum** `parent::setUp()`. Guard membaca `Env::get('DB_DATABASE')` dan melempar `RuntimeException` jika nama tidak berakhiran `_test`. Karena `RefreshDatabase` (yang menjalankan `migrate:fresh` = menghapus semua tabel) baru berjalan di dalam `parent::setUp()`, guard selalu mendahului migrasi atau penghapusan apa pun.
+  - Helper pembeku waktu `freezeNow()` di `tests/Pest.php` (default beku di `2026-01-01 12:00:00`, menerima string atau `Carbon`), plus hook global `pest()->beforeEach/afterEach` yang mereset jam antar-tes. Temuan jujur: hook `beforeEach()` telanjang di `Pest.php` **tidak dieksekusi** di Pest 4.7.8 (dibuktikan tes probe); diperbaiki memakai API `pest()->beforeEach(...)` sesuai dokumentasi resmi Global Hooks, lalu probe lulus.
+  - README diperbarui: perintah tes, catatan bahwa ekstensi SQLite tidak lagi dibutuhkan, pengaman, dan helper waktu.
+- Bukti pengaman terhadap database yang salah (dijalankan 2026-10-11, saat database development masih berisi tabel framework sisa verifikasi T-001 dengan 0 baris data bisnis):
+
+  ```
+  PS> $env:DB_DATABASE="kamarin"; php artisan test
+  {"tool":"pest","result":"failed","tests":40,"passed":0,"assertions":0,"duration_ms":2943,"errors":40,"error_details":[{"test":"Tests\\Unit\\ExampleTest::test_that_true_is_true","file":"C:\\Users\\andikaa\\Desktop\\Kamarin\\tests\\Unit\\ExampleTest.php","line":12,"message":"Refusing to run tests against database [kamarin]. The database name must end with \"_test\" so that tests can never drop development data. Fix DB_DATABASE in phpunit.xml before running the suite again.", ... }, ...39 error_details lainnya dengan pesan guard yang sama...]}
+  EXIT=2
+  ```
+
+  Database development dicek langsung setelah run gagal — utuh, tidak ada tabel yang terhapus:
+
+  ```
+  PS> docker exec kamarin-postgres psql -U kamarin -d kamarin -t -c "select count(*)||' tables' from information_schema.tables where table_schema='public';"
+   10 tables
+  PS> docker exec kamarin-postgres psql -U kamarin -d kamarin -c "select count(*) as users from users;"
+   users
+  -------
+       0
+  (1 row)
+  ```
+
+- Tes di PostgreSQL `kamarin_test` (dijalankan dua kali: setelah pengaturan akhir, dan sekali lagi setelah formatter):
+
+  ```
+  PS> php artisan test
+  {"tool":"pest","result":"passed","tests":40,"passed":40,"assertions":138,"duration_ms":6667}
+  EXIT=0
+  PS> docker exec kamarin-postgres psql -U kamarin -d kamarin_test -t -c "select count(*)||' tables' from information_schema.tables where table_schema='public';"
+   10 tables
+  ```
+
+  Tidak ada tes yang gagal karena perbedaan perilaku SQLite vs PostgreSQL. Semua 40 tes bawaan starter kit lulus apa adanya.
+
+- Verifikasi helper pembeku waktu (tes probe sementara di `tests/Unit/FreezeNowProbeTest.php`, dihapus setelah verifikasi, tidak masuk suite):
+
+  ```
+  PS> vendor\bin\pest tests/Unit/FreezeNowProbeTest.php
+  {"tool":"pest","result":"passed","tests":3,"passed":3,"assertions":4,"duration_ms":89}
+  EXIT=0
+  ```
+
+- Formatter: `composer run lint` (Pint) memperbaiki style di `tests/TestCase.php`, lalu `composer run lint:check` lulus (`{"tool":"pint","result":"passed"}`, EXIT=0)
+- Tes: 40 lulus, 0 gagal (138 assert, Pest 4.7.8, PostgreSQL 18.6)
+- File kunci: `phpunit.xml`, `tests/TestCase.php`, `tests/Pest.php`, `README.md`
+- Penyimpangan dari dokumen sumber: tidak ada. Dua hal di luar ruang lingkup yang dilaporkan: (1) `.github/workflows/tests.yml` bawaan starter kit menjalankan `composer setup` + `composer ci:check` tanpa layanan PostgreSQL sehingga akan gagal jika CI GitHub diaktifkan; (2) database development holds 10 tabel framework sisa verifikasi T-001 (users=0) — bukan "kosong" murni, dicatat agar bukti di atas jujur
+- Perintah kunci dan sumber dokumentasi:
+  - `phpunit.xml` `<env name="DB_DATABASE" value="kamarin_test"/>` — konfigurasi standar pengujian Laravel (laravel.com/docs/13.x/testing), aturan keras AGENTS.md nomor 10
+  - Guard: `Env::get('DB_DATABASE')` sebelum `parent::setUp()` — `RefreshDatabase` menjalankan `migrate:fresh` di dalam `setUp()` aplikasi Laravel (laravel.com/docs/13.x/database)
+  - Hook global: `pest()->beforeEach(...)` — https://pestphp.com/docs/global-hooks (diverifikasi 2026-10-11; halaman docs Pest saat ini 5.x, proyek memakai Pest 4.7.8, perilaku diverifikasi lewat tes probe)
+- Penjelasan untuk sidang (bagaimana dan kenapa): Semua tes dipindah dari SQLite `:memory:` ke database PostgreSQL `kamarin_test` yang terpisah, karena aturan seperti unique index parsial dan kunci baris hanya bisa dibuktikan di PostgreSQL sungguhan. Sebuah pengaman dipasang di `tests/TestCase.php` yang membaca nama database sebelum aplikasi boot, sehingga sebelum `RefreshDatabase` sempat menghapus apa pun; jika namanya tidak diakhiri `_test`, seluruh suite langsung gagal dengan pesan jelas — ini dibuktikan dengan menjalankan tes terhadap database `kamarin` dan memverifikasi tabel development tetap utuh. Helper `freezeNow()` disediakan karena banyak aturan bisnis Kamarin bergantung pada "hari ini" (expiry, no-show), jadi tes harus bisa membekukan jam secara deterministik; jam otomatis direset antar-tes lewat hook global Pest. Satu bug nyata ditemukan saat verifikasi: hook `beforeEach()` biasa di `Pest.php` tidak dieksekusi Pest 4, sehingga dibetulkan memakai API `pest()->beforeEach(...)` sesuai dokumentasi resmi — buktinya tes probe berubah dari gagal menjadi lulus.
+- Reviewer: belum ada (backlog menandai T-003 "Tidak perlu" review Claude)
 
 ### T-001 Setup lingkungan Laravel 13 + React + PostgreSQL (2026-10-10)
 

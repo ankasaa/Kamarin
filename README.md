@@ -42,7 +42,7 @@ php artisan schedule:work
 | `docker compose down -v` | Stop PostgreSQL and delete both databases and their data |
 | `composer run dev` | App server + queue worker + Vite dev server |
 | `composer run test` | Config clear, Pint check, PHPStan, then `php artisan test` (Pest) |
-| `php artisan test` | Run the test suite only |
+| `php artisan test` | Run the test suite only, against PostgreSQL `kamarin_test` |
 | `composer run lint` | Format code with Laravel Pint |
 
 ## Versions (verified 2026-10-10)
@@ -59,6 +59,11 @@ php artisan schedule:work
 ## Environment notes
 
 - Timezone is set through `APP_TIMEZONE` in `.env` (currently `Asia/Makassar`).
-- The default test suite still runs on SQLite `:memory:` (framework default in `phpunit.xml`);
-  task T-003 will point it at the separate `kamarin_test` PostgreSQL database.
+- Tests run against the separate PostgreSQL database `kamarin_test` (`phpunit.xml`), never
+  against SQLite. The SQLite PHP extensions are no longer needed. PostgreSQL must be running:
+  `docker compose up -d`.
+- A guard in `tests/TestCase.php` aborts every test before any migration or data deletion
+  unless `DB_DATABASE` ends with `_test`, so the suite can never wipe development data.
+- Use the `freezeNow()` helper (defined in `tests/Pest.php`) to pin the clock in tests;
+  the clock resets automatically between tests.
 - `docker/postgresql/init-test-db.sql` creates `kamarin_test` on the first container start only.
