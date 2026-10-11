@@ -46,6 +46,7 @@ Jika kode, permintaan user, dan dokumen saling bertentangan: **berhenti dan tany
 - Perintah dan versi diverifikasi dari dokumentasi resmi Laravel 13. Server, queue worker, dan Vite dijalankan lewat skrip `composer run dev` (verifikasi isinya di `composer.json`). Scheduler dijalankan terpisah dengan `php artisan schedule:work` saat dibutuhkan.
 - Docker Desktop harus berjalan. Cek dengan `docker info`. Jika tidak berjalan, jalankan atau minta user.
 - `compose.yaml`: port database hanya di-bind ke `127.0.0.1` (bukan semua antarmuka). Volume data PostgreSQL 18 di-mount ke `/var/lib/postgresql`, bukan `/var/lib/postgresql/data`, sesuai dokumentasi image resmi untuk versi 18 ke atas. Jangan diubah.
+- Proyek memakai Pest 4.x, sedangkan dokumentasi Pest saat ini membahas versi 5.x. Verifikasi perilaku API dengan tes kecil sebelum mengandalkannya, dan catat jika berbeda.
 - Zona waktu aplikasi: `Asia/Makassar` lewat `APP_TIMEZONE` di `.env` (keputusan user, final).
 - Jangan menjalankan `npm` atau `composer` untuk folder yang sama dari dua lingkungan berbeda (mis. Windows dan WSL), karena `node_modules` dan `vendor` bisa bentrok.
 
@@ -55,6 +56,7 @@ Jika kode, permintaan user, dan dokumen saling bertentangan: **berhenti dan tany
 - Hanya satu agent aktif di repo pada satu waktu. Mulai dengan `git status` yang bersih.
 - Urutan: baca rujukan, tulis tes dari kasus uji, implementasi, jalankan **seluruh** tes, perbarui `docs/STATUS.md`, commit.
 - Jangan melapor selesai jika tes gagal. Laporkan jujur apa yang gagal dan kenapa.
+- Jangan menjalankan formatter otomatis pada folder `docs/`. Dokumen sumber punya format sendiri, kecuali user memintanya.
 - Jika spesifikasi kurang jelas atau bertentangan, tulis pertanyaan di `docs/STATUS.md` (bagian "Pertanyaan terbuka") dan berhenti di bagian itu. Jangan menebak.
 - User harus bisa menjelaskan kode ini saat sidang. Setelah tiap tugas, tulis 3 sampai 5 kalimat penjelasan "bagaimana dan kenapa" di `docs/STATUS.md`.
 
