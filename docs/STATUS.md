@@ -10,15 +10,13 @@ Diperbarui terakhir: 2026-10-11
 
 Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi minimal:
 
-- Tugas dan cabang: T-004, `task/T-004-master-migrations` (dari `main` setelah T-002 di-merge dengan squash-merge `2d1233c`, lalu di atasnya commit arsip `026c9d5`; amandemen ERD: `379f180` + `3177e2c`)
+- Tugas dan cabang: T-005, `task/T-005-transaction-migrations` (dari `main`; `main` di-fast-forward dulu ke tip T-004 `5124cf1` karena instruksi menyebut "setelah T-004 di-merge" — linier, tanpa merge commit)
 - Status: selesai
-- Hasil verifikasi akhir (dijalankan mandiri, bukan klaim): `php artisan migrate:fresh` di development sukses — 11 tabel master + 2 tabel framework; **33 tes lulus, 0 gagal** (458 assert) di PostgreSQL `kamarin_test` (24 tes lama + 9 tes kesesuaian skema, lulus terhadap ERD hasil revisi user); `composer run lint:check` (Pint) lulus; keluaran `\d users`, `\d rooms`, `\d rates`, `\d properties`, `\d guests`, `\d housekeeping_statuses` persis ERD v2.1 (tempelan di log T-004 + amandemen)
-- Yang dibuat: 10 migration baru (`2026_10_11_000001`..`000011`) — roles, properties, room_types, rooms, amenities, room_type_amenities, housekeeping_statuses, guests, booking_sources, rates. Migration `users` bawaan dimodifikasi di tempat dan **diganti nama filenya** menjadi `2026_10_11_000003_create_users_table.php` (diizinkan backlog) agar urutannya setelah `roles` dan `properties`; kolom baru: `role_id` (FK not null), `property_id` (FK nullable), `is_active`. Model `Role` + `RoleFactory` baru; `UserFactory` diperbarui agar 24 tes lama tetap lulus
-- Amandemen 2026-10-11 (ERD direvisi user): 9 kolom master menjadi nullable (`roles.description`, `properties.phone`, `room_types.description`, `rooms.floor`, `amenities.icon`, `housekeeping_statuses.notes`, `guests.email`/`phone`/`country`) dan default `properties.pending_expiry_hours` 24 → **3**; migration diedit di tempat, tes kesesuaian skema **dikencangkan** (default dibaca langsung dari ERD, bukan hardcoded; unique `housekeeping_statuses.room_id` masuk daftar periksa — ketika itu membuka bug: `->unique()` setelah `->constrained()` tidak pernah membuat unique index, sudah diperbaiki). Detail + keluaran di bagian "Amandemen 2026-10-11" pada entri log T-004
-- Pengaman utama: `tests/Feature/Database/SchemaConformityTest.php` mem-parsing `docs/erd_v2_1.mermaid` lalu membandingkannya dengan `information_schema` PostgreSQL: nama tabel, nama kolom, tipe data, nullability, primary key, unique, foreign key, `decimal(12,0)` untuk uang, dan default kebijakan properti. Tabel atau kolom di luar ERD **ditolak**, kecuali yang diizinkan aturan 13 (tabel framework; kolom `users`: `email_verified_at`, `remember_token`, timestamps)
-- Daftar pengecualian eksplisit — 8 tabel transaksi, sengaja belum dimigrasi, **dikosongkan di T-005**: `room_blocks`, `bookings`, `booking_items`, `booking_nights`, `booking_charges`, `payments`, `booking_status_logs`, `booking_change_logs`. Tes memastikan kedelapannya belum ada
-- File kunci untuk di-review (path): `database/migrations/2026_10_11_000001_create_roles_table.php` .. `000011_create_rates_table.php`, `database/migrations/2026_10_11_000003_create_users_table.php`, `tests/Feature/Database/SchemaConformityTest.php`, `app/Models/Role.php`, `database/factories/RoleFactory.php`, `database/factories/UserFactory.php`, `app/Models/User.php`
-- Pertanyaan yang butuh keputusan: **tidak ada** — pertanyaan `housekeeping_statuses.notes` NOT NULL sudah dijawab user (dibuat nullable, ERD direvisi 2026-10-11, migration mengikuti)
+- Hasil verifikasi akhir (dijalankan mandiri, bukan klaim): `php artisan migrate:fresh` di development sukses — **22 migration** (19 tabel ERD + tabel framework); **39 tes lulus, 0 gagal** (832 assert) di PostgreSQL `kamarin_test`; `composer run lint:check` (Pint) lulus; keluaran `\d booking_nights`, `\d bookings`, `\d payments` persis ERD v2.1 lengkap dengan indeks bagian 7 (tempelan di log T-005)
+- Yang dibuat: 8 migration tabel transaksi (`2026_10_11_000012`..`000019`) — room_blocks, bookings, booking_items, booking_nights, booking_charges, payments, booking_status_logs, booking_change_logs — plus `000020` indeks pencarian tamu (melengkapi arsitektur bagian 7). Wajib terpenuhi: unique parsial `(room_id, stay_date) WHERE is_active` via `DB::statement`; CHECK tanggal bernama via `DB::statement` (`bookings_check_out_after_checkin`, `room_blocks_end_after_start`); indeks bagian 7 semua terpasang; FK **NO ACTION di semua relasi (tanpa cascade, tanpa pengecualian)**; soft delete `bookings`; uang `decimal(12,0)` (6 kolom, diverifikasi otomatis dari ERD); `booking_source_id` NOT NULL (BK-06); `old_status` nullable (log pertama)
+- Daftar pengecualian di tes kesesuaian skema **dikosongkan** — tes kini memeriksa semua 19 tabel ERD, 29 foreign key, unique `booking_code`, dan seluruh kolom uang. **BK-05 terbukti**: insert dua malam aktif untuk (room, tanggal) sama ditolak database dengan pesan constraint yang benar; malam nonaktif + aktif pada (room, tanggal) sama terbukti **DIIZINKAN**; CHECK tanggal terbukti menolak tanggal sama maupun terbalik
+- Satu analisis yang diminta: `booking_nights.room_id` **bisa** menyimpang dari `booking_items.room_id` (keduanya FK lepas ke `rooms`, tidak ada penghubung di database). Tiga opsi pencegahan + rekomendasi (FK gabungan) tercatat di "Pertanyaan terbuka dari agent", entri T-005 — butuh persetujuan karena menyentuh skema
+- File kunci untuk di-review (path): `database/migrations/2026_10_11_000012_create_room_blocks_table.php` .. `000020_add_guest_search_indexes_to_guests_table.php`, `tests/Feature/Database/TransactionSchemaTest.php`, `tests/Feature/Database/SchemaConformityTest.php`
 
 ---
 
@@ -29,7 +27,7 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 | Fase 2 (aturan bisnis) | Selesai: `docs/business_rules_kamarin.md` v1.1, keputusan K1 sampai K10 disetujui |
 | Fase 3 (perancangan) | Dokumen selesai dan disetujui. Wireframe Figma masih dikerjakan user |
 | Fase 4 (setup) | Selesai: T-001 (lingkungan), T-003 (tes PostgreSQL + pengaman), T-002 (pruning autentikasi) |
-| Fase 5 (implementasi) | Berjalan: T-004 selesai (migration tahap 1 master + tes kesesuaian skema), T-005 menyusul |
+| Fase 5 (implementasi) | Berjalan: T-004 dan T-005 selesai (migration master + transaksi dengan pengaman double booking), T-006 menyusul |
 | ERD | v2.1, dibekukan |
 
 ## Keputusan yang sudah dikunci
@@ -53,11 +51,16 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 
 ## Pertanyaan terbuka dari agent
 
-### 2026-10-11, T-004 — Satu pertanyaan skema (SELESAI - sudah dijawab user)
+### 2026-10-11, T-005 — Satu keputusan skema (tidak memblokir)
 
-1. **`housekeeping_statuses.notes` (SELESAI 2026-10-11):** Pertanyaan awal: kolom ini jadi NOT NULL karena di ERD tidak ditandai nullable. **Keputusan user: dibuat nullable.** ERD v2.1 direvisi user pada hari yang sama (penanda nullable dirapikan untuk 9 kolom master, `properties.pending_expiry_hours` default menjadi 3) dan migration T-004 mengikuti. Tes kesesuaian skema tidak dilonggarkan — justru dikencangkan (default dibaca dari ERD; unique `room_id` 1:1 ikut diperiksa, ketika itu membuka bug index yang tidak pernah terbentuk). Rincian di entri log T-004, bagian "Amandemen 2026-10-11".
+1. **`booking_nights.room_id` bisa menyimpang dari `booking_items.room_id`.** Fakta: `booking_nights.room_id` dan `booking_items.room_id` sama-sama foreign key lepas ke `rooms(id)`; tidak ada penghubung di database yang memaksa keduanya bernilai sama untuk satu rantai malam-item. Saat ini disiplinnya ada di service (mulai T-006), sesuai ERD yang menyebut room_id di nights sebagai "salinan, untuk constraint". Tiga opsi pencegahan di level database:
+   - **Opsi A (rekomendasi) — foreign key gabungan:** tambah unique `(id, room_id)` di `booking_items`, lalu ganti FK `booking_nights.booking_item_id` menjadi FK gabungan `(booking_item_id, room_id) REFERENCES booking_items(id, room_id)`. Malam dengan room_id yang tidak sama dengan item induknya langsung ditolak database; biaya satu unique index tambahan + perubahan definisi FK. Paling murah dan tetap deklaratif.
+   - **Opsi B — trigger:** bekerja, tapi logika pindah ke luar deklarasi skema, sulit terlihat saat membaca ERD/migration, dan perlu pemeliharaan sendiri.
+   - **Opsi C — CHECK dengan subquery:** tidak bisa di PostgreSQL (CHECK tidak boleh membaca tabel lain). Dicatat agar keputusan tidak mengulang jalur ini.
+   
+   Rekomendasi agent: opsi A, dikerjakan di migration terpisah (mis. T-006) karena menyentuh skema dan butuh persetujuan. Tidak memblokir T-005.
 
-Entri T-001, T-002, dan T-003 dipindahkan ke `docs/STATUS_ARCHIVE.md` (semua sudah terjawab user). Entri baru ditambahkan di bawah ini.
+Entri T-001, T-002, T-003, dan T-004 dipindahkan ke `docs/STATUS_ARCHIVE.md` (semua sudah terjawab user). Entri baru ditambahkan di bawah ini.
 
 ---
 
@@ -77,270 +80,200 @@ Entri terbaru di atas. Template:
 - Reviewer: (agent lain atau Claude) dan hasilnya
 ```
 
-### T-004 Migration tahap 1 (master) dan tes kesesuaian skema (2026-10-11)
+### T-005 Migration tahap 2 (transaksi) dan pengaman double booking di database (2026-10-11)
 
-- Cabang: `task/T-004-master-migrations`, dari `main` (`2d1233c`, squash-merge T-002 yang sudah memuat keputusan user: chisel dicopot, sail dipertahankan) + commit arsip `026c9d5`
+- Cabang: `task/T-005-transaction-migrations`. Catatan: saat tugas diminta, `main` masih di `026c9d5` (di belakang tip T-004 `5124cf1`); agent melakukan **fast-forward `main` ke `5124cf1`** lebih dulu karena instruksi menyebut "dari cabang utama setelah T-004 di-merge" — linier, tanpa merge commit, lalu membuat cabang.
 - Status: selesai
-- Langkah 1 — **tes kesesuaian skema ditulis lebih dulu** (`tests/Feature/Database/SchemaConformityTest.php`), lalu dijalankan sebelum ada migration (bukti merah):
+- Rujukan yang dibaca sebelum mulai: AGENTS.md (aturan 1, 3, 4, 5, 10), baris T-005 di backlog, `docs/erd_v2_1.mermaid` (versi hasil revisi 2026-10-11), BR-01 (bagian 2), `docs/arsitektur_sistem.md` bagian 7, kasus uji BK-05 di `docs/rencana_pengujian.md`.
+- Langkah 1 — **tes ditulis lebih dulu**, lalu dijalankan sebelum ada migration (bukti merah):
 
   ```
-  PS> vendor\bin\pest tests/Feature/Database/SchemaConformityTest.php
-  {"tool":"pest","result":"failed","tests":9,"passed":3,"assertions":29,"duration_ms":10019,"failed":4,"errors":2,"failures":[
-    "...it_creates_every_master_table_from_the_ERD...","message":"Expecting Collection not to be empty 'Table [roles] does not exist ...'",
-    "...it_keeps_the_users_table_in_sync...","message":"'is_active' ... 'property_id' ... 'role_id' hilang dari users",
-    "...it_enforces_the_unique_constraints_marked_in_the_ERD","message":"unique [roles.name] tidak ada",
-    "...it_creates_the_foreign_keys_declared_in_the_ERD","message":"'users.role_id->roles' tidak ada"] }
+  PS> vendor\bin\pest tests/Feature/Database
+  {"tool":"pest","result":"failed","tests":15,"passed":5,"assertions":391,"failed":5,"errors":5,"failures":[
+    "...it_creates_every_master_table_from_the_ERD...","message":"Table [room_blocks] does not exist ...",
+    "...it_enforces_the_unique_constraints...","message":"Missing unique index on [bookings.booking_code]",
+    "...it_creates_the_foreign_keys...","message":"Missing foreign key [room_blocks.room_id->rooms]",
+    "...TransactionSchemaTest::it_keeps_every_foreign_key_restrictive...","message":"11 is greater than or equal to 29 (gagal: 11 < 29)",
+    "...TransactionSchemaTest::it_creates_the_performance_indexes...","message":"Partial unique index missing"],
+    "error_details":["...BK-05: relation \"bookings\" does not exist..."] }
   ```
 
-  (potongan; 6 gagal/berantah karena tabel belum ada, 3 lulus — yaitu tes "tolak tabel/kolom di luar ERD" dan "tabel transaksi belum boleh ada", yang kebetulan lulus saat DB masih kosong). Dua bug pada kode tesnya sendiri juga ditemukan dan diperbaiki saat fase merah ini: regex parser ERD belum menangani penanda `PK`/`UK`/`FK` tanpa tanda kutip, dan `pgColumns()` salah menyetel tipe kembalian.
-- Yang dikerjakan:
-  - **10 migration baru**: `2026_10_11_000001` roles, `000002` properties (+ kolom kebijakan dengan default ERD), `000004` room_types, `000005` rooms (+ unique `(property_id, room_number)`), `000006` amenities, `000007` room_type_amenities (+ unique gabungan), `000008` housekeeping_statuses (+ unique `room_id` 1:1), `000009` guests (soft delete, `id_type`/`id_number` nullable), `000010` booking_sources, `000011` rates (`price decimal(12,0)`, `days_of_week jsonb`, `start_date`/`end_date` nullable).
-  - **Migration `users` dimodifikasi di tempat** (diizinkan backlog, belum ada data produksi) dan **namanya diganti** dari `0001_01_01_000000_...` menjadi `2026_10_11_000003_create_users_table.php` — alasannya urutan: `role_id` (FK not null ke `roles`) dan `property_id` (FK nullable ke `properties`) mensyaratkan kedua tabel itu dimigrasi lebih dulu. `password_reset_tokens` dan `sessions` ikut pindah file bersama file users (netral, tidak bergantung apa pun). Kolom tambahan: `is_active` boolean not null. Kolom bawaan `email_verified_at`, `remember_token`, timestamps dipertahankan (diizinkan aturan 13).
-  - Model `Role` + `RoleFactory` dibuat; `UserFactory` diperbarui: `role_id => Role::factory()`, `property_id => null`, `is_active => true` — tanpa ini 24 tes lama gagal semua karena `role_id` not null FK. Nama role sebenarnya menyusul di seeder T-007.
-  - Catatan uang (backlog: "decimal(12,0) dengan cast integer di model"): kolom `rates.price` = `numeric(12,0)` sudah dibuat dan diverifikasi tes; **cast integer di model dilakukan di T-005+** saat model `Rate` diperkenalkan — belum ada model domain di T-004, sengaja tidak dibuat berlebihan.
-- **Daftar pengecualian eksplisit** (disimpan di `erdTransactionExceptions()` dalam tes, dikosongkan di T-005): `room_blocks`, `bookings`, `booking_items`, `booking_nights`, `booking_charges`, `payments`, `booking_status_logs`, `booking_change_logs`. Tes `has not migrated the transaction tables yet` memastikan kedelapan tabel ini **belum ada** — kalau ada yang terlanjur dibuat, tes gagal.
-- Iterasi merah → hijau menemukan 5 bug nyata pada migration: `roles`/`amenities`/`booking_sources` lupa `timestamps()` (padahal kepala ERD mensyaratkan created_at + updated_at di semua tabel), dan parser tes harus mengenali tiga penanda nullable ERD: `"nullable"`, `"opsional"` (guests.id_type), `"soft delete"` (guests.deleted_at).
-- Langkah 6 — `migrate:fresh` di database development:
+  (potongan; 10 gagal/berantah karena 8 tabel transaksi belum ada — BK-05 insert ke `bookings` pun langsung ditolak "relation does not exist"). Sebelum migrasi, tiga tes juga sengaja dikencangkan lagi: pesan QueryException kini wajib memuat **nama constraint** yang benar (`booking_nights_room_stay_active_unique`, `bookings_check_out_after_checkin`, `room_blocks_end_after_start`) supaya tes membuktikan constraint yang tepat yang menolak, bukan error sembarangan. Nama CHECK dibuat deterministik lewat `DB::statement` dengan `ADD CONSTRAINT ... CHECK`, bukan nama bawaan schema builder yang tidak bisa ditebak (AGENTS.md: jangan menebak).
+- Yang dikerjakan — **9 migration**:
+  - `000012` room_blocks: FK room + user nullable, `CHECK (end_date > start_date)` via `DB::statement` (`room_blocks_end_after_start`), indeks `(room_id, start_date, end_date)`.
+  - `000013` bookings: FK property/guest/source (**`booking_source_id` NOT NULL** — revisi ERD, BK-06), `booking_code` unik, status/payment_option, tanggal check-in/out, `total_amount decimal(12,0)`, kolom nullable (expires_at, checked_in_at, checked_out_at, cancellation_reason, cancelled_at, notes), **soft delete** `deleted_at`, `CHECK (check_out_date > check_in_date)` via `DB::statement` (`bookings_check_out_after_checkin`), indeks `(property_id, check_in_date, check_out_date)` + `status`.
+  - `000014` booking_items: FK booking + room, `subtotal decimal(12,0)`.
+  - `000015` booking_nights: FK booking_item + room + rate nullable, `stay_date`, `price decimal(12,0)`, `is_active`, indeks `stay_date`, dan **unique index parsial via `DB::statement`** (dilarang schema builder, sesuai tugas + aturan 4):
+
+    ```sql
+    CREATE UNIQUE INDEX booking_nights_room_stay_active_unique
+    ON booking_nights (room_id, stay_date)
+    WHERE is_active
+    ```
+
+  - `000016` booking_charges: FK booking, description, `amount decimal(12,0)` (diskon = negatif, keputusan terkunci di STATUS).
+  - `000017` payments: FK booking + user nullable, `amount decimal(12,0)`, type/method/status, `payer_name` nullable, `payment_date`, `reference_number` nullable, `proof_path` nullable ("opsional" di ERD), indeks `booking_id`.
+  - `000018` booking_status_logs: FK booking + user nullable, **`old_status` nullable** ("kosong pada log pertama"), new_status, note nullable.
+  - `000019` booking_change_logs: FK booking + user nullable, change_type, old_value/new_value/reason text NOT NULL (tanpa penanda nullable di ERD).
+  - `000020` indeks pencarian tamu `guests.email` + `guests.phone` — melengkapi daftar indeks arsitektur bagian 7 (tabel `guests` sendiri dari T-004; bagian 7 mewajibkan indeksnya, jadi dikirim bersama tahap ini). Tanpa unique — tamu boleh berbagi email (US-07).
+- Foreign key: **semuanya NO ACTION (dampaknya = restrict, tanpa cascade) tanpa satu pun pengecualian** — tidak ada alasan untuk CASCADE di skema ini; menghapus booking yang sudah punya pembayaran/log harus gagal, bukan menghapus jejak. Dibuktikan tes: `SELECT delete_rule ... GROUP BY delete_rule` menghasilkan satu grup saja `NO ACTION`, total 29 FK (11 master T-004 + 18 transaksi T-005).
+- **Tes kesesuaian skema diperluas, bukan dilonggarkan**: daftar pengecualian `erdTransactionExceptions()` **dikosongkan** dan fungsi tabel kini `erdMigratedTables()` berisi 19 tabel ERD; loop pemeriksaan kolom/tipe/nullability/unique/default otomatis mencakup 8 tabel transaksi. Diperbarui juga: daftar 29 foreign key, unique `bookings.booking_code`, dan tes uang kini menelusuri **semua** kolom `decimal` dari ERD (6 kolom: total_amount, subtotal, price nights, amount charges, amount payments, price rates — semua `numeric(12,0)`, guard `toBe(6)` anti-lulus-kosong). Tes "tabel transaksi belum ada" dihapus (tujuannya tercapai).
+- Temuan jujur selama iterasi: dua tes CHECK sempat gagal bukan karena constraint, tapi karena **efek samping `RefreshDatabase`** — setelah satu pelanggaran, transaksi tes membatalkan (SQLSTATE 25P02) sehingga pelanggaran kedua tak pernah sampai ke CHECK. Diperbaiki dengan membungkus tiap pelanggaran dalam savepoint `DB::transaction` (rollback ke savepoint, transaksi induk tetap hidup); bukan melonggarkan tes — kedua varian pelanggaran tetap diuji. Setelah itu Pint merapikan gaya dua file tes (import, kutip) tanpa mengubah perilaku.
+- Langkah 6 — `migrate:fresh` di database development (jalur penuh, EXIT=0):
 
   ```
   PS> php artisan migrate:fresh --force
-   Dropping all tables .. 158.99ms DONE
+   Dropping all tables .. 95.39ms DONE
+   INFO Preparing database.
+   Creating migration table .. 15.79ms DONE
    INFO Running migrations.
-   0001_01_01_000001_create_cache_table .. 77.86ms DONE
-   0001_01_01_000002_create_jobs_table .. 106.09ms DONE
-   2026_10_11_000001_create_roles_table .. 35.77ms DONE
-   2026_10_11_000002_create_properties_table .. 63.29ms DONE
-   2026_10_11_000003_create_users_table .. 157.81ms DONE
-   2026_10_11_000004_create_room_types_table .. 65.02ms DONE
-   2026_10_11_000005_create_rooms_table .. 48.30ms DONE
-   2026_10_11_000006_create_amenities_table .. 21.97ms DONE
-   2026_10_11_000007_create_room_type_amenities_table .. 62.69ms DONE
-   2026_10_11_000008_create_housekeeping_statuses_table .. 42.39ms DONE
-   2026_10_11_000009_create_guests_table .. 26.02ms DONE
-  ```
-
-  Catatan jujur: keluaran run pertama terpotong oleh perintah tampilan (`Select-Object -First`) yang mematikan pipeline di tengah, sehingga `000010` dan `000011` sempat berstatus Pending; dilanjutkan dan selesai:
-
-  ```
-  PS> php artisan migrate --force
-   INFO Running migrations.
-   2026_10_11_000010_create_booking_sources_table .. 47.19ms DONE
-   2026_10_11_000011_create_rates_table .. 45.09ms DONE
+   0001_01_01_000001_create_cache_table .. 30.78ms DONE
+   0001_01_01_000002_create_jobs_table .. 54.22ms DONE
+   2026_10_11_000001_create_roles_table .. 10.13ms DONE
+   2026_10_11_000002_create_properties_table .. 9.82ms DONE
+   2026_10_11_000003_create_users_table .. 44.36ms DONE
+   2026_10_11_000004_create_room_types_table .. 22.27ms DONE
+   2026_10_11_000005_create_rooms_table .. 13.08ms DONE
+   2026_10_11_000006_create_amenities_table .. 11.21ms DONE
+   2026_10_11_000007_create_room_type_amenities_table .. 20.60ms DONE
+   2026_10_11_000008_create_housekeeping_statuses_table .. 22.70ms DONE
+   2026_10_11_000009_create_guests_table .. 9.88ms DONE
+   2026_10_11_000010_create_booking_sources_table .. 10.51ms DONE
+   2026_10_11_000011_create_rates_table .. 16.51ms DONE
+   2026_10_11_000012_create_room_blocks_table .. 48.27ms DONE
+   2026_10_11_000013_create_bookings_table .. 75.60ms DONE
+   2026_10_11_000014_create_booking_items_table .. 155.79ms DONE
+   2026_10_11_000015_create_booking_nights_table .. 32.57ms DONE
+   2026_10_11_000016_create_booking_charges_table .. 10.58ms DONE
+   2026_10_11_000017_create_payments_table .. 21.52ms DONE
+   2026_10_11_000018_create_booking_status_logs_table .. 25.17ms DONE
+   2026_10_11_000019_create_booking_change_logs_table .. 16.57ms DONE
+   2026_10_11_000020_add_guest_search_indexes_to_guests_table .. 7.56ms DONE
   EXIT=0
-  PS> php artisan migrate:status   (13 baris: semua "Ran", 0 "Pending")
   ```
 
-- Hasil `\d` tabel kunci di database development (persis ERD v2.1):
+- Hasil `\d booking_nights` (perhatikan baris kedua di Indexes: unique parsial `WHERE is_active`):
 
   ```
-  Table "public.users"
-      Column       |              Type              | Collation | Nullable |              Default
-  -------------------+--------------------------------+-----------+----------+-----------------------------------
-   id                | bigint                         |           | not null | nextval('users_id_seq'::regclass)
-   role_id           | bigint                         |           | not null |
-   property_id       | bigint                         |           |          |
-   name              | character varying(255)         |           | not null |
-   email             | character varying(255)         |           | not null |
-   password          | character varying(255)         |           | not null |
-   is_active         | boolean                        |           | not null |
-   email_verified_at | timestamp(0) without time zone |           |          |
-   remember_token    | character varying(100)         |           |          |
-   created_at        | timestamp(0) without time zone |           |          |
-   updated_at        | timestamp(0) without time zone |           |          |
+                                              Table "public.booking_nights"
+       Column      |              Type              | Collation | Nullable |                  Default
+  -----------------+--------------------------------+-----------+----------+--------------------------------------------
+   id              | bigint                         |           | not null | nextval('booking_nights_id_seq'::regclass)
+   booking_item_id | bigint                         |           | not null |
+   room_id         | bigint                         |           | not null |
+   rate_id         | bigint                         |           |          |
+   stay_date       | date                           |           | not null |
+   price           | numeric(12,0)                  |           | not null |
+   is_active       | boolean                        |           | not null |
+   created_at      | timestamp(0) without time zone |           |          |
+   updated_at      | timestamp(0) without time zone |           |          |
   Indexes:
-      "users_pkey" PRIMARY KEY, btree (id)
-      "users_email_unique" UNIQUE CONSTRAINT, btree (email)
+      "booking_nights_pkey" PRIMARY KEY, btree (id)
+      "booking_nights_room_stay_active_unique" UNIQUE, btree (room_id, stay_date) WHERE is_active
+      "booking_nights_stay_date_index" btree (stay_date)
   Foreign-key constraints:
-      "users_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
-      "users_role_id_foreign" FOREIGN KEY (role_id) REFERENCES roles(id)
-
-  Table "public.rooms"
-      Column    |              Type              | Collation | Nullable |              Default
-  --------------+--------------------------------+-----------+----------+-----------------------------------
-   id           | bigint                         |           | not null | nextval('rooms_id_seq'::regclass)
-   property_id  | bigint                         |           | not null |
-   room_type_id | bigint                         |           | not null |
-   room_number  | character varying(255)         |           | not null |
-   floor        | integer                        |           | not null |
-   status       | character varying(255)         |           | not null |
-   created_at   | timestamp(0) without time zone |           |          |
-   updated_at   | timestamp(0) without time zone |           |          |
-  Indexes:
-      "rooms_pkey" PRIMARY KEY, btree (id)
-      "rooms_property_id_room_number_unique" UNIQUE CONSTRAINT, btree (property_id, room_number)
-  Foreign-key constraints:
-      "rooms_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
-      "rooms_room_type_id_foreign" FOREIGN KEY (room_type_id) REFERENCES room_types(id)
-
-  Table "public.rates"
-       Column     |              Type              | Collation | Nullable |              Default
-  ----------------+--------------------------------+-----------+----------+-----------------------------------
-   id             | bigint                         |           | not null | nextval('rates_id_seq'::regclass)
-   property_id    | bigint                         |           | not null |
-   room_type_id   | bigint                         |           | not null |
-   name           | character varying(255)         |           | not null |
-   price          | numeric(12,0)                  |           | not null |
-   start_date     | date                           |           |          |
-   end_date       | date                           |           |          |
-   days_of_week   | jsonb                          |           |          |
-   priority       | integer                        |           | not null |
-   is_default     | boolean                        |           | not null |
-   minimum_nights | integer                        |           | not null |
-   created_at     | timestamp(0) without time zone |           |          |
-   updated_at     | timestamp(0) without time zone |           |          |
-  Foreign-key constraints:
-      "rates_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
-      "rates_room_type_id_foreign" FOREIGN KEY (room_type_id) REFERENCES room_types(id)
-
-  Table "public.properties"
-          Column        |              Type              | Collation | Nullable |                Default
-  ----------------------+--------------------------------+-----------+----------+----------------------------------------
-   id                   | bigint                         |           | not null | nextval('properties_id_seq'::regclass)
-   name                 | character varying(255)         |           | not null |
-   address              | text                           |           | not null |
-   city                 | character varying(255)         |           | not null |
-   phone                | character varying(255)         |           | not null |
-   check_in_time        | time(0) without time zone      |           | not null | '14:00:00'::time without time zone
-   check_out_time       | time(0) without time zone      |           | not null | '12:00:00'::time without time zone
-   deposit_percent      | smallint                       |           | not null | '50'::smallint
-   pending_expiry_hours | smallint                       |           | not null | '24'::smallint
-   free_cancel_days     | smallint                       |           | not null | '2'::smallint
-   no_show_cutoff_time  | time(0) without time zone      |           | not null | '22:00:00'::time without time zone
-   created_at           | timestamp(0) without time zone |           |          |
-   updated_at           | timestamp(0) without time zone |           |          |
+      "booking_nights_booking_item_id_foreign" FOREIGN KEY (booking_item_id) REFERENCES booking_items(id)
+      "booking_nights_rate_id_foreign" FOREIGN KEY (rate_id) REFERENCES rates(id)
+      "booking_nights_room_id_foreign" FOREIGN KEY (room_id) REFERENCES rooms(id)
   ```
 
-- Seluruh suite di `kamarin_test` (dijalankan dua kali: saat hijau pertama dan sekali lagi pada kode ter-commit):
+- Hasil `\d bookings` (booking_source_id not null, soft delete, CHECK, tiga indeks):
+
+  ```
+                                                Table "public.bookings"
+         Column        |              Type              | Collation | Nullable |               Default
+  ---------------------+--------------------------------+-----------+----------+--------------------------------------
+   id                  | bigint                         |           | not null | nextval('bookings_id_seq'::regclass)
+   property_id         | bigint                         |           | not null |
+   guest_id            | bigint                         |           | not null |
+   created_by_user_id  | bigint                         |           |          |
+   booking_source_id   | bigint                         |           | not null |
+   booking_code        | character varying(255)         |           | not null |
+   status              | character varying(255)         |           | not null |
+   payment_option      | character varying(255)         |           | not null |
+   guest_count         | integer                        |           | not null |
+   check_in_date       | date                           |           | not null |
+   check_out_date      | date                           |           | not null |
+   expires_at          | timestamp(0) without time zone |           |          |
+   checked_in_at       | timestamp(0) without time zone |           |          |
+   checked_out_at      | timestamp(0) without time zone |           |          |
+   total_amount        | numeric(12,0)                  |           | not null |
+   cancellation_reason | character varying(255)         |           |          |
+   cancelled_at        | timestamp(0) without time zone |           |          |
+   notes               | text                           |           |          |
+   deleted_at          | timestamp(0) without time zone |           |          |
+   created_at          | timestamp(0) without time zone |           |          |
+   updated_at          | timestamp(0) without time zone |           |          |
+  Indexes:
+      "bookings_pkey" PRIMARY KEY, btree (id)
+      "bookings_booking_code_unique" UNIQUE CONSTRAINT, btree (booking_code)
+      "bookings_property_id_check_in_date_check_out_date_index" btree (property_id, check_in_date, check_out_date)
+      "bookings_status_index" btree (status)
+  Check constraints:
+      "bookings_check_out_after_checkin" CHECK (check_out_date > check_in_date)
+  Foreign-key constraints:
+      "bookings_booking_source_id_foreign" FOREIGN KEY (booking_source_id) REFERENCES booking_sources(id)
+      "bookings_created_by_user_id_foreign" FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+      "bookings_guest_id_foreign" FOREIGN KEY (guest_id) REFERENCES guests(id)
+      "bookings_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
+  Referenced by:
+      TABLE "booking_change_logs" CONSTRAINT "booking_change_logs_booking_id_foreign" FOREIGN KEY (booking_id) REFERENCES bookings(id)
+      TABLE "booking_charges" CONSTRAINT "booking_charges_booking_id_foreign" FOREIGN KEY (booking_id) REFERENCES bookings(id)
+      TABLE "booking_items" CONSTRAINT "booking_items_booking_id_foreign" FOREIGN KEY (booking_id) REFERENCES bookings(id)
+      TABLE "booking_status_logs" CONSTRAINT "booking_status_logs_booking_id_foreign" FOREIGN KEY (booking_id) REFERENCES bookings(id)
+      TABLE "payments" CONSTRAINT "payments_booking_id_foreign" FOREIGN KEY (booking_id) REFERENCES bookings(id)
+  ```
+
+- Hasil `\d payments` (uang bulat, kolom opsional nullable, indeks booking_id):
+
+  ```
+                                                Table "public.payments"
+         Column        |              Type              | Collation | Nullable |               Default
+  ---------------------+--------------------------------+-----------+----------+--------------------------------------
+   id                  | bigint                         |           | not null | nextval('payments_id_seq'::regclass)
+   booking_id          | bigint                         |           | not null |
+   recorded_by_user_id | bigint                         |           |          |
+   amount              | numeric(12,0)                  |           | not null |
+   type                | character varying(255)         |           | not null |
+   method              | character varying(255)         |           | not null |
+   status              | character varying(255)         |           | not null |
+   payer_name          | character varying(255)         |           |          |
+   payment_date        | date                           |           | not null |
+   reference_number    | character varying(255)         |           |          |
+   proof_path          | character varying(255)         |           |          |
+   created_at          | timestamp(0) without time zone |           |          |
+   updated_at          | timestamp(0) without time zone |           |          |
+  Indexes:
+      "payments_pkey" PRIMARY KEY, btree (id)
+      "payments_booking_id_index" btree (booking_id)
+  Foreign-key constraints:
+      "payments_booking_id_foreign" FOREIGN KEY (booking_id) REFERENCES bookings(id)
+      "payments_recorded_by_user_id_foreign" FOREIGN KEY (recorded_by_user_id) REFERENCES users(id)
+  ```
+
+- Seluruh suite di `kamarin_test` (sekali saat hijau pertama, sekali lagi pada kode ter-commit setelah formatter):
 
   ```
   PS> php artisan test
-  {"tool":"pest","result":"passed","tests":33,"passed":33,"assertions":456,"duration_ms":8291}
+  {"tool":"pest","result":"passed","tests":39,"passed":39,"assertions":832,"duration_ms":5892}
+  EXIT=0
+  PS> php artisan test   (setelah Pint)
+  {"tool":"pest","result":"passed","tests":39,"passed":39,"assertions":832,"duration_ms":5623}
   EXIT=0
   ```
 
-  33 = 24 tes lama (login, logout, reset password, settings, dashboard — semuanya tetap lulus dengan factory baru) + 9 tes kesesuaian skema.
-- Formatter: `composer run lint` dan `composer run lint:check` lulus (`{"tool":"pint","result":"passed"}`), tanpa perubahan yang diperlukan.
-- Tes: 33 lulus, 0 gagal (456 assert, Pest 4.7.8, PostgreSQL 18.6)
-- File kunci: `tests/Feature/Database/SchemaConformityTest.php`, `database/migrations/2026_10_11_000001_create_roles_table.php` sampai `000011_create_rates_table.php`, `database/migrations/2026_10_11_000003_create_users_table.php` (rename + edit), `app/Models/Role.php`, `app/Models/User.php`, `database/factories/RoleFactory.php`, `database/factories/UserFactory.php`
-- Penyimpangan dari dokumen sumber: tidak ada. Tabel transaksi yang sengaja belum dimigrasi dicatat sebagai daftar pengecualian eksplisit sesuai instruksi backlog ("dikosongkan di T-005"). Satu pertanyaan terbuka: `housekeeping_statuses.notes` NOT NULL per konvensi ERD (bagian Pertanyaan terbuka, entri T-004)
+  39 = 24 tes lama + 8 tes kesesuaian skema (diperluas ke 19 tabel) + 7 tes constraint transaksi. Kasus uji **BK-05 lulus** (insert dua malam aktif sama ditolak database); tes "dua malam nonaktif" dan "malam nonaktif + aktif" juga lulus — membuktikan partial index hanya mengatur malam aktif, sesuai BR-01 ("Malam aktif") dan BR-01 point 3 (turnover hari yang sama).
+- **Analisis yang diminta — `booking_nights.room_id` vs `booking_items.room_id`:** Ya, **bisa menyimpang**. `booking_nights.room_id` hanyalah salinan yang diisi application code (service); di database keduanya adalah foreign key lepas ke `rooms(id)`, sehingga sebuah malam bisa menunjuk room X sementara item induknya menunjuk room Y tanpa ada yang komplain. ERD sendiri menyebut kolom ini "salinan, untuk constraint" — yaitu agar unique parsial bisa menjaga (room, malam) lintas booking; bukan agar tersinkron dengan induknya. Opsi pencegahan di level database: **(A) FK gabungan** `(booking_item_id, room_id) REFERENCES booking_items(id, room_id)` dengan unique `(id, room_id)` di booking_items — deklaratif, murah (satu index), langsung menolak penyimpangan; **(B) trigger** — bekerja tapi menyembunyikan logika dari pembaca skema; **(C) CHECK subquery** — mustahil di PostgreSQL. Rekomendasi: **A**, dikerjakan di migration terpisah setelah user menyetujui (tercatat di "Pertanyaan terbuka dari agent", entri T-005). Disiplin sementara: service (T-006+).
+- Formatter: `composer run lint` (Pint) memperbaiki gaya 2 file tes (import + kutip), `composer run lint:check` lulus.
+- Tes: 39 lulus, 0 gagal (832 assert, Pest 4.7.8, PostgreSQL 18.6)
+- File kunci: `database/migrations/2026_10_11_000012_create_room_blocks_table.php`, `000013_create_bookings_table.php`, `000014_create_booking_items_table.php`, `000015_create_booking_nights_table.php`, `000016_create_booking_charges_table.php`, `000017_create_payments_table.php`, `000018_create_booking_status_logs_table.php`, `000019_create_booking_change_logs_table.php`, `000020_add_guest_search_indexes_to_guests_table.php`, `tests/Feature/Database/TransactionSchemaTest.php`, `tests/Feature/Database/SchemaConformityTest.php`
+- Penyimpangan dari dokumen sumber: tidak ada. Dua hal yang perlu diketahui user: (1) penambahan indeks tamu (`guests.email`, `guests.phone`) di migration `000020` berasal dari arsitektur bagian 7 walau tabel `guests` milik T-004 — sengaja digabung agar seluruh set indeks bagian 7 terkirim bersama tahap ini; (2) CHECK dibuat dengan `DB::statement` + nama eksplisit (bukan schema builder) supaya tes bisa membuktikan constraint tertentu yang menolak — pola yang sama dengan unique parsial yang memang wajib `DB::statement`.
 - Perintah kunci dan sumber dokumentasi:
-  - Parsing ERD + `information_schema`: skrip uji Pest biasa (`DB::select`), tanpa paket tambahan; aturan keras AGENTS.md nomor 1 (ERD = sumber kebenaran skema) dan nomor 5 (uang bulat, decimal)
-  - `decimal('price', 12, 0)` — Laravel Blueprint decimal precision/scale; BR bagian 1 "Mata uang: Rupiah (IDR), bilangan bulat tanpa desimal"
-  - `foreignId(...)->constrained(...)` untuk FK bigint; unique gabungan `$table->unique([...])` — Laravel Schema Builder (laravel.com/docs/13.x/migrations)
-- Penjelasan untuk sidang (bagaimana dan kenapa): Tahap 1 migration membangun seluruh data master (role, properti beserta kebijakannya, tipe kamar, kamar, fasilitas, housekeeping, tamu, sumber booking, tarif) persis mengikuti ERD v2.1, sementara tabel transaksi ditunda ke T-005 dan dicatat dalam daftar pengecualian yang terbukti lewat tes, bukan sekadar janji di dokumen. Yang membedakan tugas ini dari migration biasa adalah tes kesesuaian skema: file ERD di-parsing otomatis lalu dibandingkan dengan `information_schema` PostgreSQL, sehingga selisih apa pun — tabel hilang, kolom salah tipe, nullable meleset, unique/foreign key lupa — langsung menggagalkan suite dan tidak bisa terbawa ke Fase berikutnya. Migration users yang lama dimodifikasi di tempat dan namanya diganti agar urutannya benar (roles dan properties harus ada sebelum users memakai keduanya), yang dimungkinkan karena belum ada data produksi. Selama pengembangan, tes merah ini dua kali menangkap kesalahan nyata (lupa timestamps di tiga tabel; penanda nullable ERD yang beragam kata), yang membuktikan pengamannya bekerja. Karena registrasi publik sudah dibuang di T-002, satu-satunya cara membuat user di tes adalah factory — karena itu `UserFactory` kini menempelkan role lewat factory baru, dan seeder berisi nama role asli menyusul di T-007.
-- **Amandemen 2026-10-11 — ERD direvisi user (nullable dirapikan, default expiry 3 jam):**
-  - Perubahan ERD (commit `379f180`): 9 kolom master ditandai nullable — `roles.description`, `properties.phone`, `room_types.description`, `rooms.floor`, `amenities.icon`, `housekeeping_statuses.notes`, `guests.email` ("nullable, kosong untuk sebagian booking OTA"), `guests.phone`, `guests.country` — dan `properties.pending_expiry_hours` default 24 → **3**. ERD juga menandai ulang tabel transaksi (**catatan untuk T-005**): `bookings.booking_source_id` kini **wajib** (penanda nullable dilepas), sementara `bookings.notes`, `payments.payer_name`, `payments.reference_number`, `booking_status_logs.old_status`, dan `booking_status_logs.note` ditandai nullable. Karena tabel transaksi belum dimigrasi di T-004, perubahan ini belum berdampak ke skema — harus dipakai saat migration T-005 ditulis.
-  - Migration diedit di tempat (commit `3177e2c`): `->nullable()` pada 9 kolom di atas dan `pending_expiry_hours` default menjadi 3. Belum ada data produksi, jadi tidak ada migration tambahan.
-  - Tes **dikencangkan, bukan dilonggarkan** — tiga perbaikan sekaligus, dua di antaranya menangkap bug nyata:
-    1. Tes default kini **ERD-driven**: parser mengekstrak marker `default X` dari file ERD lalu memeriksa setiap kolom master yang punya default di database. Angka hardcoded (`14:00`, `50`, `24`, dst.) dihapus dari tes, jadi revisi default berikutnya otomatis ikut teruji. Guard `expect($checked)->toBe(6)` mencegah tes lulus tanpa memeriksa apa pun.
-    2. Unique `housekeeping_statuses.room_id` ("unique, 1:1 dengan room" di ERD) masuk daftar periksa → **membuka bug nyata pada migration asli**: `foreignId('room_id')->constrained('rooms')->unique()` tidak pernah membuat unique index, karena `constrained()` mengembalikan objek definisi FK sehingga `->unique()` setelahnya menjadi atribut percuma di FK, bukan modifier kolom. Diperbaiki menjadi `->unique()->constrained('rooms')`.
-    3. Bug API Pest yang sama seperti fase awal tugas (`toContain` tidak menerima argumen pesan) muncul lagi di tes baru dan diperbaiki dengan `str_contains` + `toBeTrue(pesan)`.
-  - Jalur merah → hijau terhadap ERD baru: run pertama **gagal 3 tes** (`notes` masih NOT NULL di database tes, unique `room_id` tidak ada, tes default belum cocok) — bukti pengaman bereaksi terhadap perubahan skema; setelah perbaikan, 9/9 tes skema lulus.
-  - `migrate:fresh` di database development (jalur penuh, EXIT=0 — run pertama kali di tugas ini tanpa terpotong pipe tampilan):
-
-    ```
-    PS> php artisan migrate:fresh --force
-     Dropping all tables .. 134.68ms DONE
-     INFO Preparing database.
-     Creating migration table .. 18.70ms DONE
-     INFO Running migrations.
-     0001_01_01_000001_create_cache_table .. 31.00ms DONE
-     0001_01_01_000002_create_jobs_table .. 36.48ms DONE
-     2026_10_11_000001_create_roles_table .. 11.13ms DONE
-     2026_10_11_000002_create_properties_table .. 8.73ms DONE
-     2026_10_11_000003_create_users_table .. 52.64ms DONE
-     2026_10_11_000004_create_room_types_table .. 14.81ms DONE
-     2026_10_11_000005_create_rooms_table .. 51.44ms DONE
-     2026_10_11_000006_create_amenities_table .. 33.50ms DONE
-     2026_10_11_000007_create_room_type_amenities_table .. 21.01ms DONE
-     2026_10_11_000008_create_housekeeping_statuses_table .. 19.94ms DONE
-     2026_10_11_000009_create_guests_table .. 8.12ms DONE
-     2026_10_11_000010_create_booking_sources_table .. 10.11ms DONE
-     2026_10_11_000011_create_rates_table .. 17.94ms DONE
-    EXIT=0
-    ```
-
-  - Hasil `\d properties` (perubahan: `phone` nullable, `pending_expiry_hours` default `'3'::smallint`):
-
-    ```
-                                               Table "public.properties"
-            Column        |              Type              | Collation | Nullable |                Default
-    ----------------------+--------------------------------+-----------+----------+----------------------------------------
-     id                   | bigint                         |           | not null | nextval('properties_id_seq'::regclass)
-     name                 | character varying(255)         |           | not null |
-     address              | text                           |           | not null |
-     city                 | character varying(255)         |           | not null |
-     phone                | character varying(255)         |           |          |
-     check_in_time        | time(0) without time zone      |           | not null | '14:00:00'::time without time zone
-     check_out_time       | time(0) without time zone      |           | not null | '12:00:00'::time without time zone
-     deposit_percent      | smallint                       |           | not null | '50'::smallint
-     pending_expiry_hours | smallint                       |           | not null | '3'::smallint
-     free_cancel_days     | smallint                       |           | not null | '2'::smallint
-     no_show_cutoff_time  | time(0) without time zone      |           | not null | '22:00:00'::time without time zone
-     created_at           | timestamp(0) without time zone |           |          |
-     updated_at           | timestamp(0) without time zone |           |          |
-    Indexes:
-        "properties_pkey" PRIMARY KEY, btree (id)
-    Referenced by:
-        TABLE "rates" CONSTRAINT "rates_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
-        TABLE "room_types" CONSTRAINT "room_types_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
-        TABLE "rooms" CONSTRAINT "rooms_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
-        TABLE "users" CONSTRAINT "users_property_id_foreign" FOREIGN KEY (property_id) REFERENCES properties(id)
-    ```
-
-  - Hasil `\d guests` (`email`, `phone`, `country` kini nullable — hanya `name` yang wajib selain kolom sistem):
-
-    ```
-                                              Table "public.guests"
-       Column   |              Type              | Collation | Nullable |              Default
-    ------------+--------------------------------+-----------+----------+------------------------------------
-     id         | bigint                         |           | not null | nextval('guests_id_seq'::regclass)
-     name       | character varying(255)         |           | not null |
-     email      | character varying(255)         |           |          |
-     phone      | character varying(255)         |           |          |
-     country    | character varying(255)         |           |          |
-     id_type    | character varying(255)         |           |          |
-     id_number  | character varying(255)         |           |          |
-     deleted_at | timestamp(0) without time zone |           |          |
-     created_at | timestamp(0) without time zone |           |          |
-     updated_at | timestamp(0) without time zone |           |          |
-    Indexes:
-        "guests_pkey" PRIMARY KEY, btree (id)
-    ```
-
-  - Hasil `\d housekeeping_statuses` (`notes` nullable; unique `room_id` kini benar-benar terbentuk setelah perbaikan urutan fluent):
-
-    ```
-                                              Table "public.housekeeping_statuses"
-           Column       |              Type              | Collation | Nullable |              Default
-    --------------------+--------------------------------+-----------+----------+------------------------------------
-     id                 | bigint                         |           | not null | nextval('housekeeping_statuses_id_seq'::regclass)
-     room_id            | bigint                         |           | not null |
-     updated_by_user_id | bigint                         |           |          |
-     status             | character varying(255)         |           | not null |
-     notes              | text                           |           |          |
-     created_at         | timestamp(0) without time zone |           |          |
-     updated_at         | timestamp(0) without time zone |           |          |
-    Indexes:
-        "housekeeping_statuses_pkey" PRIMARY KEY, btree (id)
-        "housekeeping_statuses_room_id_unique" UNIQUE CONSTRAINT, btree (room_id)
-    Foreign-key constraints:
-        "housekeeping_statuses_room_id_foreign" FOREIGN KEY (room_id) REFERENCES rooms(id)
-        "housekeeping_statuses_updated_by_user_id_foreign" FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
-    ```
-
-  - Seluruh suite di `kamarin_test` setelah amandemen:
-
-    ```
-    PS> php artisan test
-    {"tool":"pest","result":"passed","tests":33,"passed":33,"assertions":458,"duration_ms":4846}
-    EXIT=0
-    PS> composer run lint:check
-    {"tool":"pint","result":"passed"}
-    EXIT=0
-    ```
-
-  - Keputusan user atas pertanyaan T-004: **`notes` dibuat nullable** (selesai; ERD dan migration selaras, tidak ada pertanyaan tersisa dari tugas ini).
+  - `CREATE UNIQUE INDEX ... WHERE is_active` — PostgreSQL partial index (www.postgresql.org/docs/current/indexes-partial.html); diwajibkan tugas + aturan keras AGENTS.md nomor 4 (BR-01 lapis 3)
+  - `ALTER TABLE ... ADD CONSTRAINT ... CHECK (...)` — PostgreSQL check constraint (www.postgresql.org/docs/current/ddl-constraints.html); CHECK tidak boleh berisi subquery (referensi yang sama), dasar penolakan opsi C
+  - Savepoint uji: `DB::transaction` nested di dalam transaksi `RefreshDatabase` — transaksi bertingkat PostgreSQL (www.postgresql.org/docs/current/transaction-iso.html bagian savepoint); diverifikasi lewat kegagalan nyata 25P02 saat pengembangan
+  - Indeks bagian 7: `docs/arsitektur_sistem.md` bagian "7. Basis data dan performa"; daftar indeks per tabel divalidasi tes dari `pg_indexes`
+- Penjelasan untuk sidang (bagaimana dan kenapa): Tahap 2 migration menutup seluruh skema ERD — 8 tabel transaksi menyusul 11 tabel master, sehingga daftar pengecualian di tes kesesuaian skema bisa dikosongkan dan satu tes kini menjamin seluruh 19 tabel, kolom, tipe, nullability, unique, dan 29 foreign key sesuai ERD. Inti tugas ini adalah membuktikan penegakan double booking di **database**, bukan di aplikasi: unique index parsial `(room_id, stay_date) WHERE is_active` ditulis dengan `DB::statement` karena schema builder tidak bisa mengekspresikan indeks parsial, lalu sebuah tes memasukkan dua malam aktif untuk kamar dan tanggal yang sama dan memastikan PostgreSQL sendiri yang menolak (BK-05), sementara tes lain memastikan malam yang sudah tidak aktif (booking dibatalkan) tidak menghalangi booking baru pada tanggal itu. CHECK tanggal dibuat dengan nama eksplisit agar tes dapat membuktikan constraint itulah yang menolak, bukan kebetulan error lain; temuan nyata selama pengujian (transaksi tes membatalkan setelah pelanggaran pertama) diselesaikan dengan savepoint, bukan dengan melepas assertion. Keputusan foreign key tanpa cascade disengaja: menghapus booking harus selalu gagal jika masih ada pembayaran atau log yang menunjuknya, karena riwayat keuangan tidak boleh terhapus diam-diam. Satu kelemahan desain yang terbuka jujur: room_id di booking_nights bisa menyimpang dari room_id item induknya; opsi pencegahan terbaik (FK gabungan) sudah dianalisis dan menunggu persetujuan.
 
 ### Tugas yang sudah selesai (diarsipkan)
 
@@ -351,3 +284,4 @@ Ringkasan satu baris per tugas; entri lengkap ada di `docs/STATUS_ARCHIVE.md`.
 | T-001 Setup lingkungan Laravel 13 + React + PostgreSQL | 2026-10-10 | Selesai, review lulus setelah perbaikan port | `32fac10` |
 | T-003 Tes pindah ke PostgreSQL, pengaman database, dan pembeku waktu | 2026-10-11 | Selesai | `b66530f` |
 | T-002 Pruning autentikasi starter kit | 2026-10-11 | Selesai, review lulus | `2d1233c` (squash-merge di main; cabang asli `task/T-002-auth-cleanup`) |
+| T-004 Migration tahap 1 (master) + tes kesesuaian skema | 2026-10-11 | Selesai (termasuk amandemen ERD nullable + expiry 3 jam) | `5124cf1` |
