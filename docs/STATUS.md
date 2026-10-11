@@ -10,13 +10,13 @@ Diperbarui terakhir: 2026-10-11
 
 Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi minimal:
 
-- Tugas dan cabang: T-005, `task/T-005-transaction-migrations` (dari `main`; `main` di-fast-forward dulu ke tip T-004 `5124cf1` karena instruksi menyebut "setelah T-004 di-merge" — linier, tanpa merge commit)
-- Status: selesai
-- Hasil verifikasi akhir (dijalankan mandiri, bukan klaim): `php artisan migrate:fresh` di development sukses — **22 migration** (19 tabel ERD + tabel framework); **39 tes lulus, 0 gagal** (832 assert) di PostgreSQL `kamarin_test`; `composer run lint:check` (Pint) lulus; keluaran `\d booking_nights`, `\d bookings`, `\d payments` persis ERD v2.1 lengkap dengan indeks bagian 7 (tempelan di log T-005)
-- Yang dibuat: 8 migration tabel transaksi (`2026_10_11_000012`..`000019`) — room_blocks, bookings, booking_items, booking_nights, booking_charges, payments, booking_status_logs, booking_change_logs — plus `000020` indeks pencarian tamu (melengkapi arsitektur bagian 7). Wajib terpenuhi: unique parsial `(room_id, stay_date) WHERE is_active` via `DB::statement`; CHECK tanggal bernama via `DB::statement` (`bookings_check_out_after_checkin`, `room_blocks_end_after_start`); indeks bagian 7 semua terpasang; FK **NO ACTION di semua relasi (tanpa cascade, tanpa pengecualian)**; soft delete `bookings`; uang `decimal(12,0)` (6 kolom, diverifikasi otomatis dari ERD); `booking_source_id` NOT NULL (BK-06); `old_status` nullable (log pertama)
-- Daftar pengecualian di tes kesesuaian skema **dikosongkan** — tes kini memeriksa semua 19 tabel ERD, 29 foreign key, unique `booking_code`, dan seluruh kolom uang. **BK-05 terbukti**: insert dua malam aktif untuk (room, tanggal) sama ditolak database dengan pesan constraint yang benar; malam nonaktif + aktif pada (room, tanggal) sama terbukti **DIIZINKAN**; CHECK tanggal terbukti menolak tanggal sama maupun terbalik
-- Satu analisis yang diminta: `booking_nights.room_id` **bisa** menyimpang dari `booking_items.room_id` (keduanya FK lepas ke `rooms`, tidak ada penghubung di database). Tiga opsi pencegahan + rekomendasi (FK gabungan) tercatat di "Pertanyaan terbuka dari agent", entri T-005 — butuh persetujuan karena menyentuh skema
-- File kunci untuk di-review (path): `database/migrations/2026_10_11_000012_create_room_blocks_table.php` .. `000020_add_guest_search_indexes_to_guests_table.php`, `tests/Feature/Database/TransactionSchemaTest.php`, `tests/Feature/Database/SchemaConformityTest.php`
+- Tugas dan cabang: T-005 + lanjutannya **T-005b**, `task/T-005-transaction-migrations` (T-005 dibuat dari `main` setelah fast-forward ke tip T-004 `5124cf1` — linier, tanpa merge commit; untuk T-005b cabang `main` **tidak disentuh** sesuai instruksi user terbaru)
+- Status: selesai (T-005 dan T-005b)
+- Hasil verifikasi akhir (dijalankan mandiri, bukan klaim): `php artisan migrate:fresh` di development sukses — **23 migration**; siklus `migrate:rollback --step=3` lalu `migrate` lagi sukses — **`down()` terbukti bekerja**; **57 tes lulus, 0 gagal** (867 assert) di PostgreSQL `kamarin_test` (sekali sebelum dan sekali sesudah formatter); `composer run lint:check` (Pint) lulus; keluaran `\d booking_nights`, `\d bookings`, `\d payments` (T-005) dan `\d booking_items`, `\d booking_nights` (T-005b) persis desain — tempelan di log tugas masing-masing
+- Yang dibuat: 8 migration tabel transaksi (`000012`..`000019`) + `000020` indeks pencarian tamu + **`000021` penguatan skema T-005b** — unique `(id, room_id)` di `booking_items`, FK gabungan `booking_nights(booking_item_id, room_id) → booking_items(id, room_id)` dengan **ON UPDATE CASCADE + ON DELETE NO ACTION** (via `DB::statement`), dan **12 CHECK kewajaran bernama eksplisit di 7 tabel** (bookings 2, booking_items 1, booking_nights 1, payments 1, rates 3, room_types 1, properties 3) — tanpa CHECK di `booking_charges.amount` (diskon negatif). Wajib T-005 juga terpenuhi: unique parsial `(room_id, stay_date) WHERE is_active`, CHECK tanggal bernama, indeks bagian 7, soft delete `bookings`, `decimal(12,0)`, `booking_source_id` NOT NULL
+- Analisis yang diminta di T-005 kini **SELESAI**: penyimpangan `booking_nights.room_id` dari `booking_items.room_id` ditolak database oleh FK gabungan (keputusan user 2026-10-11: opsi A); pindah kamar (BR-06) cukup mengubah `booking_items.room_id`, malam-malamnya ikut berpindah lewat cascade, lalu tetap dijaga unique parsial
+- `SchemaConformityTest` **tidak diubah satu karakter pun** dan tetap lulus (tidak dilonggarkan); tes FK global tetap lulus: 29 FK (1 lama dibuang, 1 gabungan masuk), **semua `delete_rule` = `NO ACTION`**, dan FK gabungan satu-satunya dengan `update_rule` = `CASCADE`. `SchemaHardeningTest` (18 tes, berdataset) membuktikan tiap penolakan lewat **pesan constraint yang bernama**
+- File kunci untuk di-review (path): `database/migrations/2026_10_11_000012_create_room_blocks_table.php` .. `000021_add_composite_fk_and_reasonableness_checks.php`, `tests/Feature/Database/TransactionSchemaTest.php`, `tests/Feature/Database/SchemaHardeningTest.php`, `tests/Feature/Database/SchemaConformityTest.php`
 
 ---
 
@@ -27,7 +27,7 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 | Fase 2 (aturan bisnis) | Selesai: `docs/business_rules_kamarin.md` v1.1, keputusan K1 sampai K10 disetujui |
 | Fase 3 (perancangan) | Dokumen selesai dan disetujui. Wireframe Figma masih dikerjakan user |
 | Fase 4 (setup) | Selesai: T-001 (lingkungan), T-003 (tes PostgreSQL + pengaman), T-002 (pruning autentikasi) |
-| Fase 5 (implementasi) | Berjalan: T-004 dan T-005 selesai (migration master + transaksi dengan pengaman double booking), T-006 menyusul |
+| Fase 5 (implementasi) | Berjalan: T-004, T-005, dan T-005b selesai (migration master + transaksi + penguatan skema FK gabungan dan CHECK kewajaran), T-006 menyusul |
 | ERD | v2.1, dibekukan |
 
 ## Keputusan yang sudah dikunci
@@ -51,14 +51,14 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 
 ## Pertanyaan terbuka dari agent
 
-### 2026-10-11, T-005 — Satu keputusan skema (tidak memblokir)
+### 2026-10-11, T-005 — Satu keputusan skema (SELESAI - sudah dijawab user)
 
-1. **`booking_nights.room_id` bisa menyimpang dari `booking_items.room_id`.** Fakta: `booking_nights.room_id` dan `booking_items.room_id` sama-sama foreign key lepas ke `rooms(id)`; tidak ada penghubung di database yang memaksa keduanya bernilai sama untuk satu rantai malam-item. Saat ini disiplinnya ada di service (mulai T-006), sesuai ERD yang menyebut room_id di nights sebagai "salinan, untuk constraint". Tiga opsi pencegahan di level database:
-   - **Opsi A (rekomendasi) — foreign key gabungan:** tambah unique `(id, room_id)` di `booking_items`, lalu ganti FK `booking_nights.booking_item_id` menjadi FK gabungan `(booking_item_id, room_id) REFERENCES booking_items(id, room_id)`. Malam dengan room_id yang tidak sama dengan item induknya langsung ditolak database; biaya satu unique index tambahan + perubahan definisi FK. Paling murah dan tetap deklaratif.
+1. **`booking_nights.room_id` bisa menyimpang dari `booking_items.room_id` (SELESAI 2026-10-11).** Fakta: `booking_nights.room_id` dan `booking_items.room_id` sama-sama foreign key lepas ke `rooms(id)`; tidak ada penghubung di database yang memaksa keduanya bernilai sama untuk satu rantai malam-item. Tiga opsi pencegahan di level database:
+   - **Opsi A — foreign key gabungan:** tambah unique `(id, room_id)` di `booking_items`, lalu ganti FK `booking_nights.booking_item_id` menjadi FK gabungan `(booking_item_id, room_id) REFERENCES booking_items(id, room_id)`. Malam dengan room_id yang tidak sama dengan item induknya langsung ditolak database; biaya satu unique index tambahan + perubahan definisi FK. Paling murah dan tetap deklaratif.
    - **Opsi B — trigger:** bekerja, tapi logika pindah ke luar deklarasi skema, sulit terlihat saat membaca ERD/migration, dan perlu pemeliharaan sendiri.
    - **Opsi C — CHECK dengan subquery:** tidak bisa di PostgreSQL (CHECK tidak boleh membaca tabel lain). Dicatat agar keputusan tidak mengulang jalur ini.
-   
-   Rekomendasi agent: opsi A, dikerjakan di migration terpisah (mis. T-006) karena menyentuh skema dan butuh persetujuan. Tidak memblokir T-005.
+
+   **Keputusan user: opsi A**, dengan `ON UPDATE CASCADE` dan `ON DELETE NO ACTION`, dikerjakan langsung di **T-005b** (migration `2026_10_11_000021`, commit `bd658bd`). Sudah diimplementasi dan dibuktikan tes: malam yang room_id-nya menyimpang ditolak, pindah kamar memindahkan malam lewat cascade, dan cascade yang mendarat di kamar terisi ditolak unique parsial. Rincian di entri log T-005, bagian "T-005b".
 
 Entri T-001, T-002, T-003, dan T-004 dipindahkan ke `docs/STATUS_ARCHIVE.md` (semua sudah terjawab user). Entri baru ditambahkan di bawah ini.
 
@@ -274,6 +274,135 @@ Entri terbaru di atas. Template:
   - Savepoint uji: `DB::transaction` nested di dalam transaksi `RefreshDatabase` — transaksi bertingkat PostgreSQL (www.postgresql.org/docs/current/transaction-iso.html bagian savepoint); diverifikasi lewat kegagalan nyata 25P02 saat pengembangan
   - Indeks bagian 7: `docs/arsitektur_sistem.md` bagian "7. Basis data dan performa"; daftar indeks per tabel divalidasi tes dari `pg_indexes`
 - Penjelasan untuk sidang (bagaimana dan kenapa): Tahap 2 migration menutup seluruh skema ERD — 8 tabel transaksi menyusul 11 tabel master, sehingga daftar pengecualian di tes kesesuaian skema bisa dikosongkan dan satu tes kini menjamin seluruh 19 tabel, kolom, tipe, nullability, unique, dan 29 foreign key sesuai ERD. Inti tugas ini adalah membuktikan penegakan double booking di **database**, bukan di aplikasi: unique index parsial `(room_id, stay_date) WHERE is_active` ditulis dengan `DB::statement` karena schema builder tidak bisa mengekspresikan indeks parsial, lalu sebuah tes memasukkan dua malam aktif untuk kamar dan tanggal yang sama dan memastikan PostgreSQL sendiri yang menolak (BK-05), sementara tes lain memastikan malam yang sudah tidak aktif (booking dibatalkan) tidak menghalangi booking baru pada tanggal itu. CHECK tanggal dibuat dengan nama eksplisit agar tes dapat membuktikan constraint itulah yang menolak, bukan kebetulan error lain; temuan nyata selama pengujian (transaksi tes membatalkan setelah pelanggaran pertama) diselesaikan dengan savepoint, bukan dengan melepas assertion. Keputusan foreign key tanpa cascade disengaja: menghapus booking harus selalu gagal jika masih ada pembayaran atau log yang menunjuknya, karena riwayat keuangan tidak boleh terhapus diam-diam. Satu kelemahan desain yang terbuka jujur: room_id di booking_nights bisa menyimpang dari room_id item induknya; opsi pencegahan terbaik (FK gabungan) sudah dianalisis dan menunggu persetujuan.
+
+---
+
+#### T-005b — Penguatan skema: FK gabungan + 12 CHECK kewajaran (2026-10-11)
+
+- Cabang: sama, `task/T-005-transaction-migrations`, dikerjakan sebagai **commit terpisah** dari T-005. **`main` tidak disentuh** (instruksi user: jangan mengubah cabang utama). Catatan jujur: aturan itu belum ada di file `AGENTS.md` saat tugas dijalankan (file terakhir diubah di `2d1233c`); agent mengikuti instruksi dari pesan chat apa adanya.
+- Kronologi: instruksi pertama merujuk baris T-005b dan paket CHECK-nya, tetapi saat itu baris itu belum ada di repo — agent **berhenti dan bertanya** (AGENTS.md: "jangan menebak", "berhenti dan tanyakan"), bukan menebak isi CHECK. User menambahkan baris T-005b ke backlog (commit `0ab3a67`), lalu tugas dikerjakan.
+- Keputusan user: **opsi A** FK gabungan dengan `ON UPDATE CASCADE` + `ON DELETE NO ACTION`, ditambah paket 12 CHECK kewajaran sesuai baris T-005b. Tanpa CHECK pada `booking_charges.amount` karena diskon bernilai negatif.
+- Langkah 1 — tes ditulis lebih dulu (`tests/Feature/Database/SchemaHardeningTest.php`, 18 tes) dan dijalankan sebelum migration (bukti merah):
+
+  ```
+  PS> vendor\bin\pest tests/Feature/Database/SchemaHardeningTest.php
+  {"tool":"pest","result":"failed","tests":18,"passed":1,"assertions":18,"failed":17,
+   "failures":[
+     "it_rejects_a_night_whose_room__id_differs_from_its_parent_booking_item":
+       "Exception \"Illuminate\Database\QueryException\" not thrown.",
+     "it_moves_the_nights_with_their_booking_item_when_room__id_changes__BR_06_pindah_kamar_":
+       "Failed asserting that two arrays are identical. - 0 => 4, 1 => 4 / + 0 => 3, 1 => 3",
+     "it_rejects_moving_an_item_to_a_room_already_occupied_on_one_of_its_dates":
+       "Exception \"Illuminate\Database\QueryException\" not thrown.",
+     "it_gives_the_composite_foreign_key_ON_UPDATE_CASCADE_and_ON_DELETE_NO_ACTION":
+       "Expecting null not to be null 'Composite foreign key is missing'.",
+     ...13 data set CHECK: "Exception \"Illuminate\\Database\\QueryException\" not thrown."] }
+  EXIT=1
+  ```
+
+  Satu-satunya tes hijau saat merah: `keeps booking_charges.amount unrestricted` — memang belum ada CHECK apa pun di tabel itu, jadi tes itu berfungsi menjaga agar tidak ada yang menambahkannya.
+
+- Yang dikerjakan — migration `2026_10_11_000021_add_composite_fk_and_reasonableness_checks.php`:
+  1. `unique(['id', 'room_id'])` di `booking_items`.
+  2. Drop FK tunggal `booking_nights_booking_item_id_foreign`, ganti lewat `DB::statement` dengan FK gabungan bernama `booking_nights_booking_item_id_room_id_foreign`: `FOREIGN KEY (booking_item_id, room_id) REFERENCES booking_items (id, room_id) ON UPDATE CASCADE ON DELETE NO ACTION`.
+  3. Dua belas CHECK lewat `DB::statement` dengan **nama eksplisit** (tes membuktikan nama ini muncul di pesan penolakan): `bookings_guest_count_positive`, `bookings_total_amount_non_negative`, `booking_items_subtotal_non_negative`, `booking_nights_price_non_negative`, `payments_amount_positive`, `rates_price_non_negative`, `rates_minimum_nights_positive`, `rates_end_date_not_before_start`, `room_types_capacity_positive`, `properties_deposit_percent_range`, `properties_pending_expiry_positive`, `properties_free_cancel_days_non_negative`.
+  4. `down()` membalik semuanya: 12 `DROP CONSTRAINT`, drop FK gabungan, restore FK tunggal `booking_nights_booking_item_id_foreign` (Blueprint, tanpa klausul hapus = NO ACTION), drop unique `(id, room_id)`.
+- Setelah migration: **18/18 tes T-005b hijau**, lalu seluruh suite dua kali (sebelum dan sesudah formatter):
+
+  ```
+  PS> php artisan test
+  {"tool":"pest","result":"passed","tests":57,"passed":57,"assertions":867,"duration_ms":7460}
+  EXIT=0
+  PS> php artisan test   (setelah Pint)
+  {"tool":"pest","result":"passed","tests":57,"passed":57,"assertions":867,"duration_ms":7304}
+  EXIT=0
+  ```
+
+  57 = 39 tes T-005 + 18 tes T-005b. **Kunci requirement (5):** `SchemaConformityTest` tidak diubah satu karakter pun dan tetap lulus — tidak dilonggarkan; tes FK global di `TransactionSchemaTest` juga tetap lulus: jumlah FK tetap 29 (1 lama dibuang, 1 gabungan masuk) dan **semua `delete_rule` = `NO ACTION`**, termasuk FK gabungan. FK gabungan adalah satu-satunya yang `update_rule` = `CASCADE`, divalidasi tes tersendiri.
+- Bukti siklus hidup migration — `down()` bekerja, di database development:
+
+  ```
+  PS> php artisan migrate:fresh --force
+   2026_10_11_000019_create_booking_change_logs_table .. 16.16ms DONE
+   2026_10_11_000020_add_guest_search_indexes_to_guests_table .. 8.38ms DONE
+   2026_10_11_000021_add_composite_fk_and_reasonableness_checks .. 57.25ms DONE
+  FRESH_EXIT=0
+  PS> php artisan migrate:rollback --step=3 --force
+   INFO Rolling back migrations.
+   2026_10_11_000021_add_composite_fk_and_reasonableness_checks .. 57.54ms DONE
+   2026_10_11_000020_add_guest_search_indexes_to_guests_table .. 7.96ms DONE
+   2026_10_11_000019_create_booking_change_logs_table .. 12.81ms DONE
+  ROLLBACK_EXIT=0
+  PS> php artisan migrate --force
+   INFO Running migrations.
+   2026_10_11_000019_create_booking_change_logs_table .. 42.03ms DONE
+   2026_10_11_000020_add_guest_search_indexes_to_guests_table .. 12.15ms DONE
+   2026_10_11_000021_add_composite_fk_and_reasonableness_checks .. 48.94ms DONE
+  MIGRATE_EXIT=0
+  ```
+
+- Hasil `\d booking_items` — unique `(id, room_id)`, CHECK subtotal, dan "Referenced by" FK gabungan dengan `ON UPDATE CASCADE`:
+
+  ```
+                                            Table "public.booking_items"
+     Column   |              Type              | Collation | Nullable |                  Default
+  ------------+--------------------------------+-----------+----------+-------------------------------------------
+   id         | bigint                         |           | not null | nextval('booking_items_id_seq'::regclass)
+   booking_id | bigint                         |           | not null |
+   room_id    | bigint                         |           | not null |
+   subtotal   | numeric(12,0)                  |           | not null |
+   created_at | timestamp(0) without time zone |           |          |
+   updated_at | timestamp(0) without time zone |           |          |
+  Indexes:
+      "booking_items_pkey" PRIMARY KEY, btree (id)
+      "booking_items_id_room_id_unique" UNIQUE CONSTRAINT, btree (id, room_id)
+  Check constraints:
+      "booking_items_subtotal_non_negative" CHECK (subtotal >= 0::numeric)
+  Foreign-key constraints:
+      "booking_items_booking_id_foreign" FOREIGN KEY (booking_id) REFERENCES bookings(id)
+      "booking_items_room_id_foreign" FOREIGN KEY (room_id) REFERENCES rooms(id)
+  Referenced by:
+      TABLE "booking_nights" CONSTRAINT "booking_nights_booking_item_id_room_id_foreign" FOREIGN KEY (booking_item_id, room_id) REFERENCES booking_items(id, room_id) ON UPDATE CASCADE
+  ```
+
+- Hasil `\d booking_nights` — FK gabungan tanpa klausul hapus (= NO ACTION), CHECK price, indeks parsial utuh:
+
+  ```
+                                              Table "public.booking_nights"
+       Column      |              Type              | Collation | Nullable |                  Default
+  -----------------+--------------------------------+-----------+----------+--------------------------------------------
+   id              | bigint                         |           | not null | nextval('booking_nights_id_seq'::regclass)
+   booking_item_id | bigint                         |           | not null |
+   room_id         | bigint                         |           | not null |
+   rate_id         | bigint                         |           |          |
+   stay_date       | date                           |           | not null |
+   price           | numeric(12,0)                  |           | not null |
+   is_active       | boolean                        |           | not null |
+   created_at      | timestamp(0) without time zone |           |          |
+   updated_at      | timestamp(0) without time zone |           |          |
+  Indexes:
+      "booking_nights_pkey" PRIMARY KEY, btree (id)
+      "booking_nights_room_stay_active_unique" UNIQUE, btree (room_id, stay_date) WHERE is_active
+      "booking_nights_stay_date_index" btree (stay_date)
+  Check constraints:
+      "booking_nights_price_non_negative" CHECK (price >= 0::numeric)
+  Foreign-key constraints:
+      "booking_nights_booking_item_id_room_id_foreign" FOREIGN KEY (booking_item_id, room_id) REFERENCES booking_items(id, room_id) ON UPDATE CASCADE
+      "booking_nights_rate_id_foreign" FOREIGN KEY (rate_id) REFERENCES rates(id)
+      "booking_nights_room_id_foreign" FOREIGN KEY (room_id) REFERENCES rooms(id)
+  ```
+
+- Enam tes wajib terpenuhi: (1) malam dengan room_id berbeda dari item induknya ditolak `booking_nights_booking_item_id_room_id_foreign`; (2) mengubah `booking_items.room_id` memindahkan malam-malamnya (dua malam ikut ke room B, terbukti lewat SELECT); (3) pindah ke kamar yang sudah terisi pada 10 Juni ditolak `booking_nights_room_stay_active_unique`; (4) 13 kasus dataset, tiap CHECK menolak nilai buruk dengan nama constraint yang benar; (5) kesesuaian skema lulus tanpa diubah + semua FK `delete_rule` NO ACTION.
+- Catatan penyimpangan: 12 CHECK tidak ada di penanda ERD (ERD hanya menandai CHECK tanggal) — ditambahkan sesuai baris T-005b, yaitu persetujuan eksplisit user; tidak ada tabel atau kolom yang berubah dan ERD tidak diedit.
+- Formatter: Pint merapikan 1 file tes (FQ class + urutan import), `composer run lint:check` lulus.
+- Tes: 57 lulus, 0 gagal (867 assert, Pest 4.7.8, PostgreSQL 18.6)
+- File kunci: `database/migrations/2026_10_11_000021_add_composite_fk_and_reasonableness_checks.php`, `tests/Feature/Database/SchemaHardeningTest.php`
+- Perintah kunci dan sumber dokumentasi:
+  - FK gabungan dan `ON UPDATE CASCADE` — PostgreSQL foreign keys (www.postgresql.org/docs/current/ddl-constraints.html); larangan subquery di CHECK (referensi yang sama) tetap dasar opsi C gugur
+  - `ALTER TABLE ... ADD CONSTRAINT ... CHECK` — PostgreSQL check constraints (referensi yang sama); nama eksplisit agar tes bisa membuktikan constraint yang tepat menolak
+  - `migrate:rollback --step=N` — Laravel 13 database migrations (laravel.com/docs/13.x/migrations)
+  - Daftar isi CHECK dan keputusan opsi A — `docs/tasks/BACKLOG_FASE4_5.md` baris T-005b (keputusan user 2026-10-11)
+- Penjelasan untuk sidang (bagaimana dan kenapa): T-005b menutup satu-satunya celah desain yang diakui jujur di T-005 — malam yang room_id-nya bisa menyimpang dari item induknya. FK gabungan `(booking_item_id, room_id)` membuat penyimpangan mustahil di level database tanpa trigger, sementara `ON UPDATE CASCADE` membuat pindah kamar (BR-06) cukup satu UPDATE pada `booking_items`: malam-malamnya ikut berpindah, lalu unique parsial langsung menolak kalau kamar tujuan sudah terisi pada salah satu tanggalnya. Dua pengaman yang tadinya hanya saling melengkapi kini saling mengunci — FK menjaga "malam selalu milik item yang benar", unique parsial menjaga "satu kamar satu malam aktif". Dua belas CHECK kewajaran memindahkan validasi masuk akal (uang tidak negatif, kapasitas positif, batas DP 0–100, tanggal tarif berurutan) dari aplikasi ke database, dengan nama constraint eksplisit sehingga setiap penolakan bisa dibuktikan tes persis constraint mana yang bekerja. Semua dibalik rapi oleh `down()`, yang diuji sungguhan lewat rollback tiga langkah lalu migrate ulang.
 
 ### Tugas yang sudah selesai (diarsipkan)
 
