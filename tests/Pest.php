@@ -1,5 +1,6 @@
 <?php
 
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -32,6 +33,42 @@ pest()->extend(TestCase::class)
 expect()->extend('toBeOne', function () {
     return $this->toBe(1);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Frozen Clock Helper
+|--------------------------------------------------------------------------
+|
+| Business rules depend on "today", expiry deadlines, and no-show cutoffs
+| (docs/rencana_pengujian.md section 2: "fixed now"). Call freezeNow() inside
+| a test to pin Carbon's clock. The clock is reset automatically before and
+| after every test so one test cannot leak its time into another.
+|
+| freezeNow();                  // frozen at 2026-01-01 12:00:00 (app timezone)
+| freezeNow('2026-06-15 10:00:00');
+| freezeNow(Carbon::parse('2026-06-15'));
+|
+*/
+
+function freezeNow(string|Carbon $now = '2026-01-01 12:00:00'): Carbon
+{
+    $frozen = $now instanceof Carbon ? $now->copy() : Carbon::parse($now);
+
+    Carbon::setTestNow($frozen);
+
+    return $frozen;
+}
+
+// Global hooks must be registered through the `pest()` configuration object
+// (https://pestphp.com/docs/global-hooks). They reset the frozen clock so one
+// test can never leak its time into the next one.
+pest()
+    ->beforeEach(function () {
+        Carbon::setTestNow();
+    })
+    ->afterEach(function () {
+        Carbon::setTestNow();
+    });
 
 /*
 |--------------------------------------------------------------------------
