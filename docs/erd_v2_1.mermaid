@@ -1,5 +1,6 @@
 erDiagram
     %% Catatan: semua tabel memakai created_at dan updated_at standar Laravel
+    %% Catatan nullable: kolom non-key tanpa penanda nullable, opsional, atau soft delete adalah NOT NULL (dirapikan 2026-10-11)
     %% ================= ACCESS =================
     ROLES ||--o{ USERS : "dimiliki"
     PROPERTIES |o--o{ USERS : "menampung"
@@ -7,7 +8,7 @@ erDiagram
     ROLES {
         bigint id PK
         varchar name UK
-        text description
+        text description "nullable"
     }
     USERS {
         bigint id PK
@@ -26,11 +27,11 @@ erDiagram
         varchar name
         text address
         varchar city
-        varchar phone
+        varchar phone "nullable"
         time check_in_time "default 14:00"
         time check_out_time "default 12:00"
         smallint deposit_percent "default 50"
-        smallint pending_expiry_hours "default 24"
+        smallint pending_expiry_hours "default 3"
         smallint free_cancel_days "default 2"
         time no_show_cutoff_time "default 22:00"
     }
@@ -44,7 +45,7 @@ erDiagram
         bigint id PK
         bigint property_id FK
         varchar name
-        text description
+        text description "nullable"
         int capacity
         boolean is_active
     }
@@ -53,7 +54,7 @@ erDiagram
         bigint property_id FK
         bigint room_type_id FK
         varchar room_number "UK dengan property_id"
-        int floor
+        int floor "nullable"
         varchar status "active, maintenance, inactive"
     }
 
@@ -64,7 +65,7 @@ erDiagram
     AMENITIES {
         bigint id PK
         varchar name UK
-        varchar icon
+        varchar icon "nullable"
     }
     ROOM_TYPE_AMENITIES {
         bigint id PK
@@ -81,7 +82,7 @@ erDiagram
         bigint room_id FK "unique, 1:1 dengan room"
         bigint updated_by_user_id FK "nullable"
         varchar status "dirty, cleaning, ready"
-        text notes
+        text notes "nullable"
         timestamp updated_at
     }
 
@@ -100,14 +101,14 @@ erDiagram
 
     %% ================= GUEST & SOURCE =================
     GUESTS ||--o{ BOOKINGS : "membuat"
-    BOOKING_SOURCES |o--o{ BOOKINGS : "menjadi asal"
+    BOOKING_SOURCES ||--o{ BOOKINGS : "menjadi asal"
 
     GUESTS {
         bigint id PK
         varchar name
-        varchar email
-        varchar phone
-        varchar country
+        varchar email "nullable, kosong untuk sebagian booking OTA"
+        varchar phone "nullable"
+        varchar country "nullable"
         varchar id_type "opsional"
         varchar id_number "opsional, sensitif"
         timestamp deleted_at "soft delete"
@@ -144,7 +145,7 @@ erDiagram
         bigint property_id FK
         bigint guest_id FK
         bigint created_by_user_id FK "nullable"
-        bigint booking_source_id FK "nullable"
+        bigint booking_source_id FK
         varchar booking_code UK
         timestamp created_at "dasar perhitungan lead time"
         varchar status "pending, confirmed, checked_in, checked_out, cancelled, expired, no_show"
@@ -158,7 +159,7 @@ erDiagram
         decimal total_amount
         varchar cancellation_reason "nullable"
         timestamp cancelled_at "nullable"
-        text notes
+        text notes "nullable"
         timestamp deleted_at "soft delete"
     }
 
@@ -207,9 +208,9 @@ erDiagram
         varchar type "deposit, settlement, refund"
         varchar method "bank_transfer, cash, card_or_qris, ota"
         varchar status "pending, verified, failed, refunded"
-        varchar payer_name "bisa beda dari nama tamu"
+        varchar payer_name "nullable, bisa beda dari nama tamu"
         date payment_date
-        varchar reference_number
+        varchar reference_number "nullable"
         varchar proof_path "opsional"
     }
 
@@ -223,9 +224,9 @@ erDiagram
         bigint id PK
         bigint booking_id FK
         bigint changed_by_user_id FK "nullable"
-        varchar old_status
+        varchar old_status "nullable, kosong pada log pertama"
         varchar new_status
-        text note
+        text note "nullable"
         timestamp created_at
     }
     BOOKING_CHANGE_LOGS {
