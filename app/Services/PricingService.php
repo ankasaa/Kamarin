@@ -195,10 +195,19 @@ class PricingService
      * with the lowest priority, so a matching rate always exists. An
      * active room type without one cannot be sold (PR-06).
      *
+     * Only active room types are constrained: a deactivated room type
+     * is not sellable at all - AvailabilityService already refuses its
+     * rooms (BR-07.6, AV-14) - so it does not have to own a default
+     * rate yet.
+     *
      * @throws PricingException when the room type has no default rate.
      */
     public function assertHasDefaultRate(RoomType $roomType): void
     {
+        if (! $roomType->is_active) {
+            return;
+        }
+
         $hasDefault = $roomType->rates()->where('is_default', true)->exists();
 
         if (! $hasDefault) {

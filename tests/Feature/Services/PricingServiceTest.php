@@ -242,6 +242,25 @@ it('PR-06: rejects an active room type that has no default rate', function () {
     expect(true)->toBeTrue();
 });
 
+// BR-07.6 / AV-14: PR-06 constrains an *active* room type only. An
+// inactive type is not sellable at all - AvailabilityService refuses its
+// rooms - so it does not have to own a default rate yet.
+it('PR-06 (inactive): skips the default rate check for an inactive room type', function () {
+    $inactive = RoomType::factory()->create(['is_active' => false]);
+
+    pricing()->assertHasDefaultRate($inactive);
+
+    expect(true)->toBeTrue();
+
+    // The rule still bites for an active type with no default rate.
+    $active = RoomType::factory()->create(['is_active' => true]);
+
+    expectPricingError(
+        fn () => pricing()->assertHasDefaultRate($active),
+        'default',
+    );
+});
+
 // PR-07: a stay shorter than the minimum_nights of the rate on the
 // check-in night is rejected; owner/manager may override with a reason
 // (BR-11.8, K1).
