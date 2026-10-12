@@ -14,9 +14,7 @@ use App\Models\Property;
 use App\Models\Rate;
 use App\Models\Room;
 use App\Models\User;
-use App\Services\AvailabilityService;
 use App\Services\BookingService;
-use Carbon\CarbonInterface;
 use Illuminate\Database\QueryException;
 
 // Test cases BK-01 .. BK-08 from docs/rencana_pengujian.md section 4.3,
@@ -82,6 +80,10 @@ it('BK-01: creates a pending booking with a code, active nights and a status log
         ->and($booking->bookingStatusLogs)->toHaveCount(1)
         ->and($booking->bookingStatusLogs->first()->new_status)->toBe(BookingStatus::Pending)
         ->and($booking->bookingStatusLogs->first()->old_status)->toBeNull();
+
+    // BK-01 also asks for a *unique* code, so audit that directly rather
+    // than relying on the database index to keep it so.
+    expect(Booking::where('booking_code', $booking->booking_code)->count())->toBe(1);
 });
 
 // BK-02: a website booking gets expires_at = created_at + property's
@@ -89,7 +91,9 @@ it('BK-01: creates a pending booking with a code, active nights and a status log
 it('BK-02: sets expires_at for website bookings but not for staff bookings', function () {
     freezeNow('2026-06-15 10:00:00');
 
-    $property = Property::factory()->create(['pending_expiry_hours' => 3]);
+    // Deliberately not the factory default (3): this must prove the value
+    // is read from properties, not hardcoded in the service (AGENTS rule 6).
+    $property = Property::factory()->create(['pending_expiry_hours' => 7]);
     $room = sellableRoom($property);
     $guest = Guest::factory()->create();
     $source = BookingSource::factory()->create(['name' => 'Website']);
@@ -108,7 +112,7 @@ it('BK-02: sets expires_at for website bookings but not for staff bookings', fun
 
     expect($website->created_by_user_id)->toBeNull()
         ->and($website->expires_at->toDateTimeString())
-        ->toBe(now()->addHours(3)->toDateTimeString());
+        ->toBe(now()->addHours(7)->toDateTimeString());
 
     $staff = User::factory()->create();
     $roomB = sellableRoom($property);
@@ -148,17 +152,29 @@ it('BK-03: rolls back the whole multi-room booking when one room conflicts', fun
     $source = BookingSource::factory()->create();
     $staff = User::factory()->create();
 
-    expect(fn () => bookingService()->createBooking(
-        $property,
-        $guest,
-        $source,
-        PaymentOption::PayOnArrival,
-        3, // fits the two rooms' combined capacity, but roomB is taken
-        '2026-07-10',
-        '2026-07-12',
-        [$roomA, $roomB],
-        $staff,
-    ))->toThrow(AvailabilityException::class);
+    // Assert the *reason*, not only the exception class: the booking must
+    // fail because roomB already has active nights, not because the two
+    // rooms' combined capacity happened to fall short (the rooms' factory
+    // capacity could change and make this test pass for the wrong reason).
+    try {
+        bookingService()->createBooking(
+            $property,
+            $guest,
+            $source,
+            PaymentOption::PayOnArrival,
+            3, // fits the two rooms' combined capacity, but roomB is taken
+            '2026-07-10',
+            '2026-07-12',
+            [$roomA, $roomB],
+            $staff,
+        );
+
+        $this->fail('Expected an AvailabilityException because roomB is taken.');
+    } catch (AvailabilityException $e) {
+        expect($e->getMessage())
+            ->toContain("Room {$roomB->room_number} already has active nights")
+            ->not->toContain('exceeds the total capacity');
+    }
 
     // Only the pre-existing booking survives; nothing was half-created.
     expect(Booking::count())->toBe(1)
@@ -305,10 +321,12 @@ it('BK-08: generates distinct, non-sequential booking codes', function () {
 // must turn that into a clear availability message instead of leaking a
 // driver error.
 //
-// A single-threaded test can never actually race the row lock, so layer
-// 1/2 (assertValidStay) is deliberately stubbed out here to reach layer
-// 3 in isolation. Layers 1 and 2 are covered by BK-03, BK-04 and the AV
-// suite; this test only proves the 23505 translation and the rollback.
+// A single-threaded test cannot race lockForUpdate directly, so the race
+// window is simulated honestly: AvailabilityService is NOT stubbed out -
+// assertValidStay runs for real and passes, because nothing is taken yet
+// at that point - and a model hook then lands a conflicting night in the
+// gap between that recheck and the insert. That gap is exactly what
+// layer 3 has to survive.
 it('BK-05 (service): turns a unique index violation into a clear availability message', function () {
     freezeNow('2026-06-15 10:00:00');
 
@@ -318,29 +336,16 @@ it('BK-05 (service): turns a unique index violation into a clear availability me
     $source = BookingSource::factory()->create();
     $staff = User::factory()->create();
 
-    // An active night already occupies this room on the first night of
-    // the stay we are about to request.
-    Booking::factory()->confirmed()->createWithNights($room, 300000, [
-        'check_in_date' => '2026-07-10',
-        'check_out_date' => '2026-07-12',
-    ]);
-
-    // Stub out the availability recheck so the insert reaches the
-    // unique index and raises SQLSTATE 23505.
-    $this->app->bind(AvailabilityService::class, fn (): AvailabilityService => new class extends AvailabilityService
-    {
-        public function assertValidStay(
-            Property $property,
-            CarbonInterface|string $checkIn,
-            CarbonInterface|string $checkOut,
-            int $guestCount,
-            iterable $rooms,
-            ?User $user = null,
-            ?string $reason = null,
-            ?int $excludeBookingId = null,
-        ): void {
-            // Intentionally empty: layer 1 is under test elsewhere.
-        }
+    // Fires after assertValidStay has already passed and before the nights
+    // are written. withoutEvents() keeps the racing booking from re-entering
+    // this same hook.
+    Booking::creating(function () use ($room): void {
+        Booking::withoutEvents(function () use ($room): void {
+            Booking::factory()->confirmed()->createWithNights($room, 300000, [
+                'check_in_date' => '2026-07-10',
+                'check_out_date' => '2026-07-11',
+            ]);
+        });
     });
 
     try {
@@ -363,10 +368,10 @@ it('BK-05 (service): turns a unique index violation into a clear availability me
             ->and($e->getPrevious())->toBeInstanceOf(QueryException::class);
     }
 
-    // The rejected booking was rolled back: only the first booking and
-    // its two nights survive, nothing was half-created.
-    expect(Booking::count())->toBe(1)
-        ->and(BookingNight::where('is_active', true)->count())->toBe(2);
+    // Everything in that transaction - including the racing booking the
+    // hook inserted - was rolled back, so not a single row survives.
+    expect(Booking::count())->toBe(0)
+        ->and(BookingNight::where('is_active', true)->count())->toBe(0);
 });
 
 // PR-08 / BR-11.7: booking creation copies the quoted price and rate_id
