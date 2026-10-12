@@ -253,7 +253,7 @@ Entri terbaru di atas. Template:
 
 ### T-010 BookingService dan tes BK-01..BK-08 (2026-10-12)
 
-- Cabang: `task/T-010-booking-service`, dari tip `main` (`be191f3`).
+- Cabang: `task/T-010-booking-service`, dari tip `main` (`be191f3`). **Sudah di-merge fast-forward ke `main` dan di-push** (`main` = `origin/main` = `b81ed5c`, merge `--ff-only` EXIT=0, push `be191f3..b81ed5c` EXIT=0). Verifikasi ulang di `main`: **159/159, 1162 assert**, `lint:check` lulus.
 - Status: selesai, **review LULUS oleh dua agent Reviewer terpisah** (review awal + review ulang perbaikan minor; backlog menandai T-010 wajib review). Tes fokus BK: **10/10, 43 assert**; seluruh suite: **159/159, 1162 assert**, `lint:check` lulus, PostgreSQL `kamarin_test`.
 - Rujukan yang dibaca sebelum mulai: baris T-010 di `docs/tasks/BACKLOG_FASE4_5.md` (DoD: "Semua tes BK lulus. Termasuk pengujian konkurensi atau, jika tidak bisa diotomatisasi, tes penanganan pelanggaran unique index dengan pesan yang benar (dicatat jujur di STATUS.md)"), BR-01 poin 1-6 (khususnya poin 5: tiga lapis), BR-13 + K5 (expiry), BR-14 (kode booking), BR-09 (sumber wajib), kasus uji BK-01..BK-08 di `docs/rencana_pengujian.md` bagian 4.3, ERD `bookings`/`booking_items`/`booking_nights`/`booking_status_logs`/`guests`/`booking_sources`, US-12/US-13/US-21.
 - **Keputusan teknis (diverifikasi, bukan ditebak):**
