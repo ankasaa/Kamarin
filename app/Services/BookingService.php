@@ -189,7 +189,14 @@ class BookingService
             // partial unique index on (room_id, stay_date) WHERE is_active
             // rejects the insert. Translate that 23505 into the same clear
             // availability message instead of leaking a driver error.
-            if (($e->errorInfo[0] ?? null) === '23505') {
+            //
+            // Verified on this PostgreSQL driver: errorInfo is
+            // [SQLSTATE, severity, message] and only the message carries
+            // the violated constraint name. Matching the index name
+            // matters because bookings.booking_code is unique too
+            // (BR-14): a collision there is not a room being taken and
+            // must not be reported as one.
+            if ($this->isDuplicateActiveNight($e)) {
                 throw new AvailabilityException(
                     'One of the rooms was just booked for those dates; please re-check availability.',
                     previous: $e,
@@ -243,6 +250,20 @@ class BookingService
             : CarbonImmutable::parse($day);
 
         return $date->startOfDay();
+    }
+
+    /**
+     * Whether the failure is the partial unique index refusing a second
+     * active night for the same room and date (BR-01 layer 3), rather
+     * than any other unique constraint on the database.
+     */
+    private function isDuplicateActiveNight(QueryException $e): bool
+    {
+        $sqlState = $e->errorInfo[0] ?? null;
+        $message = (string) ($e->errorInfo[2] ?? $e->getMessage());
+
+        return $sqlState === '23505'
+            && str_contains($message, 'booking_nights_room_stay_active_unique');
     }
 
     /**
