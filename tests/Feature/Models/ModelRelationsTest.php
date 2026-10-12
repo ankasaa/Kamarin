@@ -10,6 +10,7 @@ use App\Models\HousekeepingStatus;
 use App\Models\Payment;
 use App\Models\Property;
 use App\Models\Rate;
+use App\Models\Role;
 use App\Models\Room;
 use App\Models\RoomBlock;
 use App\Models\RoomType;
@@ -33,6 +34,28 @@ it('loads the access relations: user with role and property', function () {
         ->and($loaded->property->users->pluck('id')->all())->toContain($user->id);
 });
 
+// Regression guard: role_id, property_id and is_active must be
+// mass-assignable so User::create() in seeders and services never
+// silently drops them (review finding on User #[Fillable]).
+it('mass-assigns user foreign keys and is_active', function () {
+    $role = Role::factory()->create(['name' => 'receptionist']);
+    $property = Property::factory()->create();
+
+    $user = User::create([
+        'role_id' => $role->id,
+        'property_id' => $property->id,
+        'name' => 'Test User',
+        'email' => 'mass-assign@example.test',
+        'password' => 'secret-password',
+        'is_active' => false,
+    ]);
+
+    expect($user->role_id)->toBe($role->id)
+        ->and($user->property_id)->toBe($property->id)
+        ->and($user->is_active)->toBeFalse()
+        ->and(User::find($user->id)->role_id)->toBe($role->id);
+});
+
 it('loads the property catalog relations (room types, rooms, rates)', function () {
     $property = Property::factory()->create();
     $roomType = RoomType::factory()->create(['property_id' => $property->id]);
@@ -45,11 +68,18 @@ it('loads the property catalog relations (room types, rooms, rates)', function (
         'room_type_id' => $roomType->id,
     ]);
 
-    $loaded = Property::with(['roomTypes', 'rooms', 'rates'])->find($property->id);
+    $loaded = Property::with(['roomTypes', 'rooms', 'rates', 'bookings'])->find($property->id);
 
     expect($loaded->roomTypes->pluck('id')->all())->toBe([$roomType->id])
         ->and($loaded->rooms->pluck('id')->all())->toBe([$room->id])
-        ->and($loaded->rates->pluck('id')->all())->toBe([$rate->id]);
+        ->and($loaded->rates->pluck('id')->all())->toBe([$rate->id])
+        ->and($loaded->bookings->pluck('id')->all())->toBe([]); // no bookings yet
+
+    // A booking created under the property shows up in the relation.
+    $booking = Booking::factory()->create(['property_id' => $property->id]);
+    $loaded = Property::with('bookings')->find($property->id);
+
+    expect($loaded->bookings->pluck('id')->all())->toBe([$booking->id]);
 
     $type = RoomType::with(['property', 'rooms', 'rates'])->find($roomType->id);
 

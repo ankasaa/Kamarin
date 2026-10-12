@@ -85,4 +85,10 @@ class Property extends Model
     {
         return $this->hasMany(Rate::class);
     }
+
+    /** @return HasMany<Booking> */
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(Booking::class);
+    }
 }
