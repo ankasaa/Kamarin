@@ -70,14 +70,9 @@ Entri terbaru di atas. Template:
 - Reviewer: (agent lain atau Claude) dan hasilnya
 ```
 
-### 2026-10-12, T-006 — Urutan T-007 (seeder) vs T-008 (menunggu keputusan user)
+### 2026-10-12, T-006 — Urutan T-007 (seeder) vs T-008 (AvailabilityService) (SELESAI - sudah dijawab user)
 
-Backlog menyusun **T-007 (seeder)** sebelum **T-008 (AvailabilityService)**. Posisi sekarang: T-006 selesai, jadi seeder sudah bisa memakai factory. Namun permintaan user sebelumnya menargetkan laporan berikutnya **setelah T-008** (AvailabilityService + tes AV-01..AV-13, dengan review user). Dua opsi:
-
-- **A — Ikuti urutan backlog:** kerjakan T-007 (seeder) sekarang, lalu T-008.
-- **B — Tunda T-007, kerjakan T-008 dulu (rekomendasi agent):** T-008 adalah inti verifikasi BR-01 dan sudah dijanjikan untuk review lebih dulu; seeder hanya menyentuh `database/seeders/` (data dummy), tidak mengubah skema atau service, sehingga aman dikerjakan setelahnya. T-006b (jika ada) tidak terpengaruh.
-
-Menunggu keputusan user sebelum memulai tugas berikutnya.
+**Keputusan user 2026-10-12: Opsi B — T-008 (AvailabilityService + tes AV) dikerjakan lebih dulu, T-007 (seeder) ditunda** sesuai target laporan "setelah T-008". Konsekuensi teknis: cabang `task/T-008-availability-service` dibuat menumpuk dari tip `task/T-006-models` karena AvailabilityService membutuhkan enum, model, dan factory hasil T-006 yang belum di-merge; setelah T-006 di-merge user, T-008 tinggal melanjutkan linier di atasnya. Alasan Opsi B: T-008 adalah inti verifikasi BR-01 dan sudah dijanjikan untuk review lebih dulu; seeder hanya menyentuh `database/seeders/` (data dummy), tidak mengubah skema atau service, sehingga aman dikerjakan setelahnya.
 
 ---
 
