@@ -472,6 +472,12 @@ class BookingService
     private function assertActorMayRun(array $rule, BookingStatus $from, BookingStatus $to, ?User $actor): void
     {
         if (($rule['system'] ?? false) === true) {
+            // expire() has no actor parameter, so today this branch can
+            // never fire. It stays as a second layer: transition() is
+            // private but the matrix row is data, and if a future caller
+            // ever passes a user against it, the refusal happens here
+            // instead of silently writing an actor into the system's log
+            // line (EX-06).
             if ($actor !== null) {
                 throw new BookingException(sprintf(
                     'Only the system may move a booking from %s to %s; a person cannot stand in for it.',
