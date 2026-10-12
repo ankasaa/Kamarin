@@ -10,7 +10,7 @@ Diperbarui terakhir: 2026-10-12
 
 Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi minimal:
 
-- Tugas dan cabang: **T-006 dan T-008 SELESAI, sudah di-review agent Reviewer terpisah dan LULUS** — perbaikan minor sudah diterapkan. Cabang: `task/T-006-models` (tip `6112b76`) dan `task/T-008-availability-service` (tip menyusul, menumpuk dari T-006 lalu rebase). `main` tidak disentuh (masih `52a5d6c`); kedua cabang belum di-push. **Menunggu merge oleh user** (T-006 dulu, baru T-008 — linier, fast-forward)
+- Tugas dan cabang: **T-006 dan T-008 SELESAI, sudah di-review agent Reviewer terpisah dan LULUS, sudah di-merge fast-forward ke `main` dan di-push** — perbaikan minor sudah diterapkan. `main` = `origin/main` = **`b487153`** (dari `52a5d6c`). Merge linier tanpa merge commit: `task/T-006-models` (`6112b76`) dulu, lalu `task/T-008-availability-service` (`b487153`), keduanya `--ff-only` EXIT=0
 - Hasil review (agent terpisah, `git status` bersih di awal/akhir, tidak mengubah apa pun): **LULUS**, tanpa pelanggaran aturan keras. Nilai enum, kolom/cast, SoftDeletes, factory, dan pemetaan **AV-01..AV-13 semua terpetakan penuh — tidak ada kasus uji terlewat**. Suite review: **134/134, 1068 assert**, `lint:check` lulus. Tiga titik keputusan dinilai sah: (a) konvensi blokir `[start, end)` — reviewer setuju (dasar CHECK `end_date > start_date`), (b) `stay_date >= today`, (c) nama role konstanta privat boleh sebagai jembatan sampai T-007
 - Perbaikan minor yang diterapkan (commit `fix(models): ...` + `fix(availability): ...`): (1) `Property::bookings()` ditambahkan sesuai ERD + assertion; (2) `User` `#[Fillable]` kini memuat `role_id`, `property_id`, `is_active` (diuji `User::create` tidak menjatuhkan FK); (3) `assertValidStay()` **mendeduplikasi kamar by id** sehingga kapasitas tidak tergandakan; (4) 3 tes baru: dedupe kapasitas, `excludeBookingId` (booking tidak menghalangi dirinya sendiri, booking lain tetap menghalangi), dan batas **"tepat hari ini"** AV-13 (`stay_date == today` menghalangi maintenance). Tes AV kini **20/20 (55 assert)**
 - Hasil verifikasi akhir (dijalankan mandiri): seluruh suite **138/138 tes, 1084 assert, 0 risky** di PostgreSQL `kamarin_test`; `composer run lint:check` lulus. (Rincian: 118 di cabang T-006 [base + enum/model], 20 tes AV di T-008; `composer run lint` tidak mengubah file lagi — bersih)
@@ -27,7 +27,7 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 | Fase 2 (aturan bisnis) | Selesai: `docs/business_rules_kamarin.md` v1.1, keputusan K1 sampai K10 disetujui |
 | Fase 3 (perancangan) | Dokumen selesai dan disetujui. Wireframe Figma masih dikerjakan user |
 | Fase 4 (setup) | Selesai: T-001 (lingkungan), T-003 (tes PostgreSQL + pengaman), T-002 (pruning autentikasi) |
-| Fase 5 (implementasi) | Berjalan: T-006 (enum, model, relasi, factory) **selesai + review LULUS** di `task/T-006-models` (`6112b76`); T-008 (AvailabilityService) **selesai + review LULUS** di `task/T-008-availability-service` (menumpuk dari T-006, sudah rebase); **menunggu merge user** lalu push; T-007 (seeder) ditunda atas keputusan user; `main` di `52a5d6c` |
+| Fase 5 (implementasi) | Berjalan: T-006 (enum, model, relasi, factory) **selesai + review LULUS + di-merge & di-push**; T-008 (AvailabilityService) **selesai + review LULUS + di-merge & di-push**. `main` = `origin/main` = `b487153`. T-007 (seeder) ditunda atas keputusan user. **Berikutnya: T-009 PricingService** (PR-01..PR-11, BR-11) |
 | ERD | v2.1, dibekukan |
 
 ## Keputusan yang sudah dikunci
