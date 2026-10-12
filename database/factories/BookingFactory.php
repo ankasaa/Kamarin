@@ -12,6 +12,7 @@ use App\Models\Guest;
 use App\Models\Property;
 use App\Models\Room;
 use App\Models\User;
+use App\Support\BookingCode;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -24,7 +25,9 @@ class BookingFactory extends Factory
      *
      * The default is a pending direct booking for a two-night stay;
      * check_out_date is always after check_in_date to satisfy the
-     * database CHECK bookings_check_out_after_checkin.
+     * database CHECK bookings_check_out_after_checkin. The booking code
+     * comes from App\Support\BookingCode, so test data obeys BR-14 the
+     * same way real bookings do.
      *
      * @return array<string, mixed>
      */
@@ -35,7 +38,7 @@ class BookingFactory extends Factory
             'guest_id' => Guest::factory(),
             'created_by_user_id' => User::factory(),
             'booking_source_id' => BookingSource::factory(),
-            'booking_code' => 'BK-'.strtoupper(fake()->unique()->bothify('####??')),
+            'booking_code' => BookingCode::generate(),
             'status' => BookingStatus::Pending,
             'payment_option' => PaymentOption::BankTransfer,
             'guest_count' => 2,

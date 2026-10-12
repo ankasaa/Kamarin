@@ -16,6 +16,7 @@ use App\Models\Guest;
 use App\Models\Property;
 use App\Models\Room;
 use App\Models\User;
+use App\Support\BookingCode;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\QueryException;
@@ -35,15 +36,6 @@ use Illuminate\Support\Facades\DB;
  */
 class BookingService
 {
-    /**
-     * Booking codes are 8 characters from an alphabet without the
-     * confusable 0, O, 1 and I, so a code read aloud over the phone
-     * cannot be misheard (BR-14).
-     */
-    private const CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-
-    private const CODE_LENGTH = 8;
-
     public function __construct(
         private readonly AvailabilityService $availability,
         private readonly PricingService $pricing,
@@ -125,7 +117,7 @@ class BookingService
                     'property_id' => $property->id,
                     'guest_id' => $guest->id,
                     'booking_source_id' => $source->id,
-                    'booking_code' => $this->generateBookingCode(),
+                    'booking_code' => BookingCode::generate(),
                     'status' => BookingStatus::Pending,
                     'payment_option' => $paymentOption,
                     'guest_count' => $guestCount,
@@ -213,10 +205,18 @@ class BookingService
      * A returning guest with a matching email is reused as-is: the
      * existing row is neither duplicated nor overwritten, so two records
      * that happen to share an email are never merged automatically.
+     *
+     * Matching uses the normalised email (BR Data dan privasi, butir 3):
+     * edge whitespace trimmed and letters lower-cased, both when it is
+     * stored and when it is looked up. The phone number is never a match
+     * key here because a number may be shared; searching by phone is a
+     * separate staff feature.
      */
     public function findOrCreateGuest(string $name, ?string $email = null, ?string $phone = null): Guest
     {
-        if ($email !== null && trim($email) !== '') {
+        $email = $this->normalizeEmail($email);
+
+        if ($email !== null) {
             $existing = Guest::where('email', $email)->first();
 
             if ($existing !== null) {
@@ -229,6 +229,23 @@ class BookingService
             'email' => $email,
             'phone' => $phone,
         ]);
+    }
+
+    /**
+     * The stored form of an email address: trim the edge whitespace and
+     * lower-case it. A blank address becomes null, which is what the
+     * nullable guests.email column is for (OTA bookings without one),
+     * and null is never used as a match key.
+     */
+    private function normalizeEmail(?string $email): ?string
+    {
+        if ($email === null) {
+            return null;
+        }
+
+        $email = trim($email);
+
+        return $email === '' ? null : strtolower($email);
     }
 
     /**
@@ -264,23 +281,5 @@ class BookingService
 
         return $sqlState === '23505'
             && str_contains($message, 'booking_nights_room_stay_active_unique');
-    }
-
-    /**
-     * A fresh, unique BR-14 booking code: 8 characters from the safe
-     * alphabet, random (never a sequence) and not already used by any
-     * row, including soft-deleted ones the unique index still covers.
-     */
-    private function generateBookingCode(): string
-    {
-        do {
-            $code = '';
-
-            for ($i = 0; $i < self::CODE_LENGTH; $i++) {
-                $code .= self::CODE_ALPHABET[random_int(0, strlen(self::CODE_ALPHABET) - 1)];
-            }
-        } while (Booking::withTrashed()->where('booking_code', $code)->exists());
-
-        return $code;
     }
 }

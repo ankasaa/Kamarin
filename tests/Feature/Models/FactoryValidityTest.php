@@ -188,6 +188,26 @@ it('soft deletes bookings and guests only', function () {
     expect(Rate::find($rate->id))->toBeNull();
 });
 
+// BR-14: test data must carry a real booking code, so BookingFactory
+// goes through the same App\Support\BookingCode generator as
+// BookingService instead of its own 'BK-' pattern.
+it('generates a BR-14 booking code from the factory', function () {
+    $codes = collect([
+        Booking::factory()->create()->booking_code,
+        Booking::factory()->create()->booking_code,
+        Booking::factory()->create()->booking_code,
+    ]);
+
+    foreach ($codes as $code) {
+        // 8 characters from the safe alphabet: no 0/O/1/I, never a
+        // sequence, and no separator such as the old 'BK-' prefix.
+        expect($code)->toMatch('/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}$/');
+    }
+
+    expect($codes->unique()->all())->toHaveCount(3)
+        ->and(Booking::whereIn('booking_code', $codes)->count())->toBe(3);
+});
+
 // Guard: the frozen-clock helper from T-003 stays compatible with the
 // date casts introduced here.
 it('keeps frozen clock compatible with date casts', function () {

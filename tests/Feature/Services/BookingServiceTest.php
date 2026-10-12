@@ -288,6 +288,40 @@ it('BK-07: finds a returning guest by email without merging automatically', func
         ->and(Guest::count())->toBe(2);
 });
 
+// Data dan privasi butir 3 (BR v1.2): the email is normalised - edge
+// whitespace trimmed, letters lower-cased - both when it is stored and
+// when it is matched, so ' A@X.test ' and 'a@x.test' are one guest. The
+// phone number is never an automatic match key (it may be shared), and a
+// blank email is stored as null rather than as whitespace.
+it('Data dan privasi 3: normalises email on store and match, never by phone', function () {
+    $first = bookingService()->findOrCreateGuest('Alice', ' A@X.test ', '0812 3456');
+
+    expect($first->email)->toBe('a@x.test');
+
+    // Same address, different casing and padding: the very same guest.
+    $second = bookingService()->findOrCreateGuest('Alice Renamed', 'a@x.test', '0812 3456');
+
+    expect($second->id)->toBe($first->id)
+        ->and(Guest::where('email', 'a@x.test')->count())->toBe(1)
+        ->and($second->name)->toBe('Alice'); // still not merged or overwritten
+
+    // A shared phone number must not merge anyone.
+    $other = bookingService()->findOrCreateGuest('Carol', 'carol@example.test', '0812 3456');
+
+    expect($other->id)->not->toBe($first->id)
+        ->and(Guest::count())->toBe(2);
+
+    // A blank email is not a match key and is stored as null.
+    $walkIn = bookingService()->findOrCreateGuest('Dave', '   ');
+
+    expect($walkIn->email)->toBeNull();
+
+    $secondWalkIn = bookingService()->findOrCreateGuest('Erin', ' ');
+
+    expect($secondWalkIn->id)->not->toBe($walkIn->id)
+        ->and(Guest::count())->toBe(4);
+});
+
 // BK-08: two bookings produce different, non-sequential 8-character
 // codes from the safe alphabet (no 0/O/1/I) (BR-14).
 it('BK-08: generates distinct, non-sequential booking codes', function () {
