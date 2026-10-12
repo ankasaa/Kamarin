@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
@@ -109,6 +110,18 @@ class Booking extends Model
     public function bookingItems(): HasMany
     {
         return $this->hasMany(BookingItem::class);
+    }
+
+    /**
+     * Every night across all items of this booking (ERD path
+     * BOOKINGS → BOOKING_ITEMS → BOOKING_NIGHTS). BR-12 reads this to
+     * sum the locked nightly prices; is_active is filtered there.
+     *
+     * @return HasManyThrough<BookingNight, BookingItem>
+     */
+    public function bookingNights(): HasManyThrough
+    {
+        return $this->hasManyThrough(BookingNight::class, BookingItem::class);
     }
 
     /** @return HasMany<BookingCharge> */

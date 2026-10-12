@@ -37,4 +37,25 @@ class RateFactory extends Factory
             'minimum_nights' => 1,
         ];
     }
+
+    /**
+     * The mandatory default rate of a room type (BR-11.4): no date
+     * range and no day-of-week filter, so it matches every night, and
+     * the lowest priority (0) so any seasonal or weekend rate outranks
+     * it.
+     *
+     * @return array<string, mixed>
+     */
+    public function defaultRate(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'name' => 'Default Rate',
+            'start_date' => null,
+            'end_date' => null,
+            'days_of_week' => null,
+            'priority' => 0,
+            'is_default' => true,
+            'minimum_nights' => 1,
+        ]);
+    }
 }
