@@ -54,6 +54,7 @@ Jika kode, permintaan user, dan dokumen saling bertentangan: **berhenti dan tany
 
 - Satu tugas per cabang `task/T-xxx-slug`. Tugas dan rujukannya ada di `docs/tasks/`. Jangan menyentuh file di luar ruang lingkup tugas dan jangan merefaktor hal lain.
 - Hanya satu agent aktif di repo pada satu waktu. Mulai dengan `git status` yang bersih.
+- Jangan mengubah cabang utama (merge, fast-forward, rebase, push) kecuali user memerintahkannya secara eksplisit di prompt dan review sudah lulus. Dalam kasus itu hanya `merge --ff-only`, tanpa force push, dan catat hash sebelum dan sesudah di STATUS.md. Jika cabang utama tertinggal dari cabang tugas sebelumnya dan tidak ada perintah merge, buat cabang baru dari ujung cabang tugas sebelumnya dan catat di STATUS.md.
 - Urutan: baca rujukan, tulis tes dari kasus uji, implementasi, jalankan **seluruh** tes, perbarui `docs/STATUS.md`, commit.
 - Jangan melapor selesai jika tes gagal. Laporkan jujur apa yang gagal dan kenapa.
 - Jangan menjalankan formatter otomatis pada folder `docs/`. Dokumen sumber punya format sendiri, kecuali user memintanya.

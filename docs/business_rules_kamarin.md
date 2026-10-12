@@ -1,6 +1,8 @@
-# Business Rules Kamarin (Draf v1.1)
+# Business Rules Kamarin (Draf v1.2)
 
 Diperbarui: 8 Oktober 2026
+
+**Perubahan v1.2:** kamar bertipe nonaktif (`room_types.is_active = false`) tidak tersedia untuk dijual (BR-01 butir 1 dan BR-07 butir 6, kasus uji AV-14). Pencocokan tamu memakai email yang dinormalisasi (BR Data dan privasi). ERD tidak berubah.
 
 **Perubahan v1.1 (ERD tetap v2.1, tidak berubah):** default expiry booking pending menjadi 3 jam, diskon dicatat sebagai biaya tambahan bernilai negatif, dan `capacity` dipahami sebagai kapasitas maksimum.
 
@@ -47,7 +49,7 @@ Aturan bernomor BR-01 sampai BR-10 mengikuti draf dari catatan wawancara. BR-11 
 
 ### BR-01 Pencegahan double booking ✅
 
-1. Kamar **r** tersedia untuk malam **d** jika semua syarat ini terpenuhi: (a) `rooms.status = active`, (b) tidak ada malam aktif untuk (r, d), (c) tidak ada `room_blocks` yang mencakup d.
+1. Kamar **r** tersedia untuk malam **d** jika semua syarat ini terpenuhi: (a) `rooms.status = active` dan `room_types.is_active = true`, (b) tidak ada malam aktif untuk (r, d), (c) tidak ada `room_blocks` yang mencakup d.
 2. Booking valid jika: semua malam tersedia, `check_out_date > check_in_date`, `guest_count` tidak melebihi total kapasitas kamar yang dipesan (`room_types.capacity` adalah kapasitas **maksimum**. Extra bed dicatat sebagai biaya tambahan tanpa penghitungan otomatis di MVP), dan jumlah malam memenuhi minimum_nights (BR-11).
 3. Check-out tamu A dan check-in tamu B pada tanggal yang sama untuk kamar yang sama diperbolehkan (turnover di hari yang sama).
 4. `check_in_date` tidak boleh lebih awal dari hari ini. Owner dan Manager boleh memakai tanggal lampau dengan alasan, untuk koreksi pencatatan 🟦.
@@ -67,6 +69,7 @@ Aturan bernomor BR-01 sampai BR-10 mengikuti draf dari catatan wawancara. BR-11 
 3. Status kebersihan (`housekeeping_statuses`): `dirty`, `cleaning`, `ready`. Perubahan: dirty → cleaning → ready oleh Housekeeping, Resepsionis, Manager, atau Owner.
 4. Saat booking checked_out, kamar otomatis menjadi `dirty`.
 5. Status kebersihan **tidak memengaruhi ketersediaan tanggal mendatang**. Pada check-in hari ini, jika kamar belum `ready`, sistem menampilkan peringatan tetapi tidak memblokir.
+6. Kamar yang tipe kamarnya `room_types.is_active = false` tidak dapat dijual, sama seperti kamar dengan `rooms.status` selain active.
 
 ---
 
@@ -228,7 +231,7 @@ Akses laporan keuangan (pendapatan, ADR, RevPAR, kas) hanya Owner dan Manager, s
 
 1. `guests.id_number` opsional dan tidak diisi pada data dummy.
 2. Booking dan tamu memakai soft delete.
-3. Tamu dicari berdasarkan email atau telepon. Sistem tidak menggabungkan data tamu secara otomatis.
+3. Tamu dicari berdasarkan email atau telepon. Email dinormalisasi (spasi di tepi dibuang dan huruf kecil) saat disimpan dan saat dicocokkan. Pencocokan otomatis saat membuat booking hanya memakai email, tidak memakai telepon karena nomor bisa dipakai bersama. Pencarian lewat telepon adalah fitur pencarian staf. Sistem tidak menggabungkan data tamu secara otomatis.
 4. Log tidak boleh memuat data sensitif.
 
 ---

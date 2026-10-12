@@ -59,6 +59,7 @@ Catatan penting:
 | AV-11 | Check-in tanggal lampau oleh resepsionis, lalu oleh Manager dengan alasan | Resepsionis ditolak, Manager diizinkan | BR-01 |
 | AV-12 | Membuat blokir pada tanggal yang punya malam aktif | Ditolak | BR-01, US-08 |
 | AV-13 | Mengubah kamar ke maintenance saat ada malam aktif mendatang | Ditolak | BR-07, US-05 |
+| AV-14 | Kamar bertipe nonaktif (`room_types.is_active = false`) | Tidak tersedia | BR-01, BR-07 |
 
 ### 4.2 Harga (PR)
 

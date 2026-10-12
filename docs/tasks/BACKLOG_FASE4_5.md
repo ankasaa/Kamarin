@@ -31,11 +31,13 @@ Cara memverifikasi: (perintah tes, hasil yang diharapkan)
 | T-008 | AvailabilityService beserta tes | BR-01, BR-07, AV-01 sampai AV-13, US-13 | Semua tes AV lulus. Turnover hari yang sama diizinkan, blokir dan booking aktif menghalangi, housekeeping tidak memengaruhi tanggal mendatang | **Ya** |
 | T-009 | PricingService beserta tes | BR-11, BR-12, PR-01 sampai PR-11 | Semua tes PR lulus. Harga per malam, priority, `days_of_week` ISO, minimum_nights dari tarif malam check-in, harga terkunci | **Ya** |
 | T-010 | BookingService: membuat booking dalam transaksi (kunci baris, cek ulang, simpan nights, status log, kode booking) | BR-01, BR-13, BR-14, BK-01 sampai BK-08, US-12, US-13 | Semua tes BK lulus. Termasuk pengujian konkurensi atau, jika tidak bisa diotomatisasi, tes penanganan pelanggaran unique index dengan pesan yang benar (dicatat jujur di STATUS.md) | **Ya** |
+| T-010b | Perbaikan kecil hasil review T-009 dan T-010: (1) normalisasi email (trim dan huruf kecil) saat menyimpan dan mencari tamu di `findOrCreateGuest`, tanpa pencocokan otomatis lewat telepon; (2) `assertHasDefaultRate` hanya untuk tipe kamar aktif, dan `AvailabilityService` menganggap kamar bertipe nonaktif tidak tersedia (AV-14 baru); (3) pindahkan pembuatan kode booking ke satu kelas (mis. `App\Support\BookingCode`) yang dipakai `BookingService` dan `BookingFactory` agar data uji memenuhi BR-14 | BR-01, BR-07 butir 6, BR-14, bagian Data dan privasi, AV-14, BK-07, US-21 | Tes untuk setiap butir lulus (email `' A@X.test '` dan `'a@x.test'` menghasilkan tamu yang sama, kamar bertipe nonaktif tidak tersedia, factory menghasilkan kode sesuai BR-14). Seluruh suite hijau, skema tidak diubah | Opsional |
 | T-011 | Transition guard dan transisi status (confirm, cancel, check-in, check-out, no-show, expire) beserta log status | Business Rules bagian 5, ST-01 sampai ST-09 | Semua tes ST lulus. Matriks status x peran dipenuhi, status akhir tidak dapat dibuka kembali | **Ya** |
 | T-012 | PaymentService: DP wajib, terbayar, sisa tagihan, status bayar, refund | BR-03, BR-04, BR-12, PY-01 sampai PY-06 | Semua tes PY lulus. Hanya pembayaran verified yang dihitung | Opsional |
 | T-013 | BookingChangeService: ubah tanggal, perpanjang, percepat, pindah kamar, beserta change log | BR-06, K3, K4, CH-01 sampai CH-11 | Semua tes CH lulus. Harga malam yang tidak berubah terkunci, cek ulang atomik, alasan wajib | **Ya** |
 | T-014 | Perintah kedaluwarsa booking pending dan penjadwalannya | BR-13, EX-01 sampai EX-06 | Semua tes EX lulus. Idempoten, booking staf tidak ikut expired | Opsional |
 | T-015 | CI GitHub Actions (hanya jika repo dipakai di GitHub): workflow menjalankan tes dengan service PostgreSQL dan database `kamarin_test`, lalu formatter | `rencana_pengujian.md` bagian 2, `AGENTS.md` aturan 10 | Workflow lulus di GitHub dengan PostgreSQL dan trigger otomatis diaktifkan kembali. Dikerjakan setelah T-010 agar sudah ada tes yang bermakna. Selesaikan juga kegagalan `npm run types:check` (3 error di file generated wayfinder, pilihan: kecualikan folder generated dari tsc) dan kecualikan `docs/` dari `npm run check` alih-alih memformatnya otomatis | Tidak perlu |
+| T-016 | RoomBlockService: membuat blokir kamar dengan pola kunci yang sama seperti `BookingService` (`SELECT ... FOR UPDATE` pada `rooms` berurutan id, cek ulang bentrok di bawah kunci) dan menolak jika ada malam aktif di rentang itu. Rentang blokir setengah terbuka `[start_date, end_date)` | BR-01 butir 6, US-08, AV-12 | AV-12 lulus, dan ada tes yang membuktikan pembuatan blokir mengunci baris kamar dengan hook di jeda antara cek-ulang dan penulisan (pola yang sama dengan BK-05 service) | Ya |
 
 Urutan: T-001 sampai T-003 berurutan. T-004 sampai T-007 berurutan. T-008 sampai T-014 berurutan sesuai nomor, karena tiap layanan memakai layanan sebelumnya. Tugas Fase 6 dan seterusnya (seeder dummy, dashboard, booking publik, analitik) ditulis setelah Fase 5 selesai.
 
@@ -50,6 +52,7 @@ Urutan: T-001 sampai T-003 berurutan. T-004 sampai T-007 berurutan. T-008 sampai
 | T-008, T-009, T-010, T-011, T-013 | Wajib | Ya |
 | T-012, T-014 | Wajib, ringan | Opsional |
 | T-015 | Opsional | Tidak |
+| T-016 | Wajib | Ya |
 
 Reviewer wajib menempelkan keluaran asli perintah verifikasi (build dan tes), bukan ringkasan. Setiap rekomendasi perubahan disertai sumber dokumentasi resmi.
 
