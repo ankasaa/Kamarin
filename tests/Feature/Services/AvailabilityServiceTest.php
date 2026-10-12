@@ -236,6 +236,83 @@ it('AV-09: rejects a guest count above the total capacity of the rooms', functio
         ->and($forFive->pluck('id')->all())->toBe([]);
 });
 
+// Review finding: the same room passed twice must not double its
+// capacity. One room of capacity 2 cannot host 3 guests just because
+// it was listed twice.
+it('deduplicates the same room so its capacity is not counted twice', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $room = Room::factory()->create(['status' => RoomStatus::Active]); // capacity 2
+
+    // Listed twice, still only capacity 2.
+    expectAvailabilityError(
+        fn () => availability()->assertValidStay($room->property, '2026-07-10', '2026-07-12', 3, [$room, $room]),
+        'capacity',
+    );
+
+    availability()->assertValidStay($room->property, '2026-07-10', '2026-07-12', 2, [$room, $room]);
+});
+
+// Review finding: excludeBookingId lets an edited booking re-check its
+// own dates without blocking itself; other bookings and blocks still
+// block (this is the hook T-013 change-booking will rely on).
+it('excludes one booking from blocking itself via excludeBookingId', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $roomA = Room::factory()->create(['status' => RoomStatus::Active]);
+    $roomB = Room::factory()->create([
+        'property_id' => $roomA->property_id,
+        'status' => RoomStatus::Active,
+    ]);
+
+    // My booking currently holds roomA for 10-12.
+    $mine = Booking::factory()->confirmed()->createWithNights($roomA, 300000, [
+        'check_in_date' => '2026-07-10',
+        'check_out_date' => '2026-07-12',
+    ]);
+
+    // Re-checking the same room without the exclusion: my own nights
+    // block me.
+    expectAvailabilityError(
+        fn () => availability()->assertValidStay($roomA->property, '2026-07-10', '2026-07-12', 2, [$roomA]),
+        'active nights',
+    );
+
+    // With the exclusion I no longer block myself, and roomB is free.
+    availability()->assertValidStay(
+        $roomA->property,
+        '2026-07-10',
+        '2026-07-12',
+        4,
+        [$roomA, $roomB],
+        null,
+        null,
+        $mine->id,
+    );
+
+    // A different booking on roomB still blocks, even while my own
+    // nights on roomA are excluded (a consistent state: no two active
+    // bookings share a room and night).
+    Booking::factory()->confirmed()->createWithNights($roomB, 300000, [
+        'check_in_date' => '2026-07-10',
+        'check_out_date' => '2026-07-12',
+    ]);
+
+    expectAvailabilityError(
+        fn () => availability()->assertValidStay(
+            $roomA->property,
+            '2026-07-10',
+            '2026-07-12',
+            4,
+            [$roomA, $roomB],
+            null,
+            null,
+            $mine->id,
+        ),
+        'active nights',
+    );
+});
+
 // AV-10: check_out_date equal to or before check_in_date is rejected
 // by validation (the database CHECK is the second layer, BR-01.2).
 it('AV-10: rejects a check-out date on or before the check-in date', function (string $checkIn, string $checkOut) {
@@ -345,7 +422,7 @@ it('AV-13: rejects maintenance and inactive while future active nights exist', f
 
     $room = Room::factory()->create(['status' => RoomStatus::Active]);
 
-    Booking::factory()->checkedOut()->createWithNights($room, 300000, [
+    Booking::factory()->confirmed()->createWithNights($room, 300000, [
         'check_in_date' => '2026-06-16', // starts tomorrow: still upcoming
         'check_out_date' => '2026-06-18',
     ]);
@@ -371,4 +448,37 @@ it('AV-13: rejects maintenance and inactive while future active nights exist', f
     ]);
 
     availability()->assertRoomStatusChangeAllowed($past, RoomStatus::Maintenance);
+});
+
+// Review finding: the exact "today" boundary of BR-07.2. A night dated
+// today is still upcoming (the room is occupied tonight), so it blocks
+// maintenance; the interpretation is stay_date >= today, not > today.
+it('AV-13: a night dated exactly today blocks maintenance and inactive', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $room = Room::factory()->create(['status' => RoomStatus::Active]);
+
+    // Stay starts today: the night of 15 June is active tonight.
+    Booking::factory()->checkedIn()->createWithNights($room, 300000, [
+        'check_in_date' => '2026-06-15',
+        'check_out_date' => '2026-06-17',
+    ]);
+
+    expectAvailabilityError(
+        fn () => availability()->assertRoomStatusChangeAllowed($room, RoomStatus::Maintenance),
+        'active nights',
+    );
+    expectAvailabilityError(
+        fn () => availability()->assertRoomStatusChangeAllowed($room, RoomStatus::Inactive),
+        'active nights',
+    );
+
+    // Contrast: a stay that ended yesterday leaves only past nights.
+    $ended = Room::factory()->create(['status' => RoomStatus::Active]);
+    Booking::factory()->checkedOut()->createWithNights($ended, 300000, [
+        'check_in_date' => '2026-06-13',
+        'check_out_date' => '2026-06-14', // last night 13 June, before today
+    ]);
+
+    availability()->assertRoomStatusChangeAllowed($ended, RoomStatus::Maintenance);
 });

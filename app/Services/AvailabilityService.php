@@ -103,7 +103,10 @@ class AvailabilityService
 
         $this->assertCheckInIsNotInPast($from, $user, $reason);
 
-        $rooms = collect($rooms);
+        // Deduplicate by primary key: the same room passed twice must
+        // not double its capacity (BR-01.2 counts the capacity of the
+        // rooms actually booked, once each).
+        $rooms = collect($rooms)->unique('id')->values();
 
         if ($rooms->isEmpty()) {
             throw new AvailabilityException('A stay requires at least one room.');
