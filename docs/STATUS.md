@@ -17,7 +17,7 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 - Analisis yang diminta di T-005 kini **SELESAI**: penyimpangan `booking_nights.room_id` dari `booking_items.room_id` ditolak database oleh FK gabungan (keputusan user 2026-10-11: opsi A); pindah kamar (BR-06) cukup mengubah `booking_items.room_id`, malam-malamnya ikut berpindah lewat cascade, lalu tetap dijaga unique parsial
 - `SchemaConformityTest` **tidak diubah satu karakter pun** dan tetap lulus (tidak dilonggarkan); tes FK global tetap lulus: 29 FK (1 lama dibuang, 1 gabungan masuk), **semua `delete_rule` = `NO ACTION`**, dan FK gabungan satu-satunya dengan `update_rule` = `CASCADE`. `SchemaHardeningTest` (18 tes, berdataset) membuktikan tiap penolakan lewat **pesan constraint yang bernama**
 - File kunci untuk di-review (path): `database/migrations/2026_10_11_000012_create_room_blocks_table.php` .. `000021_add_composite_fk_and_reasonableness_checks.php`, `tests/Feature/Database/TransactionSchemaTest.php`, `tests/Feature/Database/SchemaHardeningTest.php`, `tests/Feature/Database/SchemaConformityTest.php`
-- Review mandiri 2026-10-12 terhadap AGENTS.md/ERD/BR-01/backlog: fokus (1)(2)(3)(5) **LULUS** lewat psql manual (keluaran mentah di entri log); fokus (4) `rollback`/`migrate` **TERBLOKIR lingkungan** — Smart App Control Windows mode enforce memblokir `pdo_pgsql` (dan modul native Vite di proyek); **putusan user ditunggu** (entri "Pertanyaan terbuka" 2026-10-12). Tidak ada temuan cacat kode; 3 rekomendasi opsional bertanda sumber dokumentasi
+- Review mandiri 2026-10-12 terhadap AGENTS.md/ERD/BR-01/backlog: **semua fokus (1)-(5) LULUS** (keluaran mentah di entri log). Fokus (4) sempat terblokir — Smart App Control Windows mode enforce memblokir `pdo_pgsql` (dan modul native Vite di proyek); setelah **user menonaktifkan SAC sendiri**, siklus `migrate:rollback --step=3` + `migrate` dijalankan ulang **EXIT=0** dan seluruh suite **57/57 tes (867 assert)** hijau. Tidak ada temuan cacat kode; 3 rekomendasi opsional bertanda sumber dokumentasi
 
 ---
 
@@ -61,7 +61,7 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 
    **Keputusan user: opsi A**, dengan `ON UPDATE CASCADE` dan `ON DELETE NO ACTION`, dikerjakan langsung di **T-005b** (migration `2026_10_11_000021`, commit `bd658bd`). Sudah diimplementasi dan dibuktikan tes: malam yang room_id-nya menyimpang ditolak, pindah kamar memindahkan malam lewat cascade, dan cascade yang mendarat di kamar terisi ditolak unique parsial. Rincian di entri log T-005, bagian "T-005b".
 
-### 2026-10-12, Review T-005 — Smart App Control memblokir driver PHP (MENUNGGU KEPUTUSAN USER)
+### 2026-10-12, Review T-005 — Smart App Control memblokir driver PHP (SELESAI - sudah dijawab user)
 
 1. **Fakta.** Sejak 2026-10-12 sekitar 09:00, Smart App Control (SAC) Windows berada dalam mode **enforce** (`HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy\VerifiedAndReputablePolicyState = 1`) dan memblokir `php_pdo_pgsql.dll` (juga `php_pdo_sqlite.dll`, `php_sqlite3.dll`, `php_zip.dll`) lewat event Code Integrity 3033/3077. Akibatnya semua `php artisan` / Pest yang butuh PostgreSQL gagal dengan `could not find driver`. Modul native Vite di proyek ini (`node_modules/@voidzero-dev/vite-plus-win32-x64-msvc/vite-plus.win32-x64-msvc.node`) juga kena blokir yang sama — build frontend ikut terdampak. DLL tidak berubah sejak 2026-10-06 dan pada 2026-10-11 semua perintah ini masih lulus; perubahannya ada di kebijakan OS, bukan di proyek. Sumber: Microsoft Learn, "Smart App Control overview" (https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/overview) — "In enforcement mode ... Apps cannot be run unless they are recognized by Microsoft's app intelligence services, or they are signed with a trusted certificate"; "unknown, unsigned code are blocked by default".
 2. **Opsi (keputusan keamanan mesin — agent tidak mengambil inisiatif apa pun):**
@@ -69,6 +69,8 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
    - **B — Pertahankan SAC.** Verifikasi berbasis PHP di mesin ini tetap terblokir. Fokus (4) memakai bukti historis 2026-10-11 (siklus identik pada commit sama, EXIT=0, tercatat di entri T-005b) dan rencana dijalankan ulang di mesin/CI lain.
    - **C — PHP sementara di container Docker.** Perubahan lingkungan (keputusan Opsi D: PHP lokal) → butuh persetujuan eksplisit dan verifikasi kompatibilitas lebih dulu (AGENTS aturan 11); agent tidak melakukannya tanpa persetujuan.
 3. **Jika mesin ini dikelola organisasi**, kebijakan mungkin tidak boleh diubah — konfirmasi dulu sebelum memilih opsi A.
+
+**Resolusi 2026-10-12: user memilih menonaktifkan SAC sendiri** lewat Pengaturan Windows (state registry menjadi `0`; `extension_loaded('pdo_pgsql')` = `true`) dan meminta agent menjalankan ulang. Jalanan ulang lulus semua: fokus (4) `ROLLBACK_EXIT=0` + `MIGRATE_EXIT=0`, `SchemaConformityTest` 8/8, seluruh suite 57/57. Blokir Vite ikut lepas — build frontend layak diverifikasi user saat dipakai berikutnya.
 
 Entri T-001, T-002, T-003, dan T-004 dipindahkan ke `docs/STATUS_ARCHIVE.md` (semua sudah terjawab user). Entri baru ditambahkan di bawah ini.
 
@@ -93,7 +95,7 @@ Entri terbaru di atas. Template:
 ### Review mandiri T-005 + T-005b terhadap dokumen sumber (2026-10-12)
 
 - Cabang: `task/T-005-transaction-migrations` (tip `e58b8ac`, tanpa perubahan apa pun selama review). Rujukan: AGENTS.md, `docs/erd_v2_1.mermaid` (dibaca ulang per blok), BR-01, `docs/tasks/BACKLOG_FASE4_5.md`.
-- Status: **(1) LULUS, (2) LULUS, (3) LULUS, (5) LULUS; (4) TERBLOKIR lingkungan** — `php` tidak bisa memuat `pdo_pgsql` karena Smart App Control Windows mode enforce memblokir DLL ekstensi PHP. Menunggu keputusan user (entri "Pertanyaan terbuka" 2026-10-12). Tidak ada temuan cacat kode.
+- Status: **(1) LULUS, (2) LULUS, (3) LULUS, (4) LULUS, (5) LULUS** — fokus (4) sempat terblokir Smart App Control memblokir `pdo_pgsql` (riwayat insiden lengkap di bawah); setelah user menonaktifkan SAC, siklus dijalankan ulang lulus dan seluruh suite hijau (57/57 tes, 867 assert). Tidak ada temuan cacat kode.
 - Catatan peran (jujur): review ini **self-review** — agent yang sama dengan penulis kode. AGENTS.md melarang penulis kode me-review kodenya sendiri; direkomendasikan review kedua oleh agent/pengguna lain. **Tidak ada kode yang diedit** selama review (hanya file STATUS.md ini).
 - Lingkungan: Docker Desktop tidak berjalan saat mulai → dinyalakan agent (engine 29.8.1), container `kamarin-postgres` dijalankan ulang. Database development `kamarin` kosong sebelum dan sesudah review (semua data uji dibuang `ROLLBACK`).
 - Metode (1)-(3): satu skrip psql — satu transaksi `BEGIN` dengan `SAVEPOINT` per kasus, setiap kasus buruk diharapkan error lalu `ROLLBACK TO`, diakhiri `ROLLBACK` akhir. Keuntungan: server yang sama sekali tidak melihat data review.
@@ -205,6 +207,63 @@ php_pgsql.dll     104960  10/6/2026 6:14:26 AM
 - Interpretasi: SAC masuk mode **enforce** pada 2026-10-12 pagi dan memblokir kode tak dikenal/tidak ditandatangani. Modul native Vite di proyek ini juga kena blokir (event 09:48) — build frontend terdampak, bukan hanya PHP. Perubahan ada di kebijakan OS, bukan di proyek (kemarin 2026-10-11 siklus identik pada commit sama lulus EXIT=0 — tercatat di entri T-005b; `git log` tip sama, kode tidak berubah).
 - Sumber resmi: Microsoft Learn, "Smart App Control overview" (https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/overview): "In *enforcement mode*, Smart App Control is actively protecting your device. Apps cannot be run unless they are recognized by Microsoft's app intelligence services, or they are signed with a trusted certificate." dan "Malware, Potentially Unwanted Apps (PUA), and unknown, unsigned code are blocked by default." Mode diperiksa via Settings > Windows Security > App and Browser Control.
 - Dampak: `migrate:rollback/migrate`, `SchemaConformityTest`, dan seluruh suite Pest **tidak bisa dijalankan** hari ini. Agent **tidak** mematikan/membypass kebijakan, tidak memasang PHP alternatif, tidak mengubah lingkungan — keputusan ada di user (3 opsi di "Pertanyaan terbuka").
+
+**Resolusi (2026-10-12) — fokus (4) dijalankan ulang SETELAH user menonaktifkan SAC sendiri: LULUS.** Verifikasi sebelum ulang: registry `VerifiedAndReputablePolicyState = 0`, `php -r "var_dump(extension_loaded('pdo_pgsql'));"` → `bool(true)`. Jalanan ulang, keluaran mentah:
+
+```text
+=== rollback 3 langkah ===
+ INFO Rolling back migrations. 
+
+ 2026_10_11_000021_add_composite_fk_and_reasonableness_checks .. 668.98ms DONE
+ 2026_10_11_000020_add_guest_search_indexes_to_guests_table .. 21.58ms DONE
+ 2026_10_11_000019_create_booking_change_logs_table .. 34.19ms DONE
+ROLLBACK_EXIT=0
+=== migrate lagi ===
+ INFO Running migrations. 
+
+ 2026_10_11_000019_create_booking_change_logs_table .. 87.91ms DONE
+ 2026_10_11_000020_add_guest_search_indexes_to_guests_table .. 8.56ms DONE
+ 2026_10_11_000021_add_composite_fk_and_reasonableness_checks .. 67.51ms DONE
+MIGRATE_EXIT=0
+=== migrate:status SESUDAH (ringkas) ===
+ 2026_10_11_000017_create_payments_table .. [1] Ran 
+ 2026_10_11_000018_create_booking_status_logs_table .. [1] Ran 
+ 2026_10_11_000019_create_booking_change_logs_table .. [2] Ran 
+ 2026_10_11_000020_add_guest_search_indexes_to_guests_table .. [2] Ran 
+ 2026_10_11_000021_add_composite_fk_and_reasonableness_checks .. [2] Ran 
+```
+
+Verifikasi katalog SETELAH siklus — `down()` terbukti membalik, `up()` memasang lagi utuh:
+
+```text
+ fk_gabungan 
+-------------
+           1
+(1 row)
+
+ check_bernama 
+---------------
+            14
+(1 row)
+
+                                                               indexdef                                                               
+--------------------------------------------------------------------------------------------------------------------------------------
+ CREATE UNIQUE INDEX booking_nights_room_stay_active_unique ON public.booking_nights USING btree (room_id, stay_date) WHERE is_active
+(1 row)
+```
+
+Jalur otomatis (yang semula terblokir) kini hijau:
+
+```text
+=== SchemaConformityTest ===
+{"tool":"pest","result":"passed","tests":8,"passed":8,"assertions":738,"duration_ms":6223}
+CONFORMITY_EXIT=0
+=== SELURUH SUITE ===
+{"tool":"pest","result":"passed","tests":57,"passed":57,"assertions":867,"duration_ms":17182}
+SUITE_EXIT=0
+```
+
+Verdict (4) final: **LULUS** — `down()` terbukti dijalankan lalu `up()` memasang ulang seluruh penguatan (FK gabungan, 14 CHECK bernama, indeks parsial), dan seluruh suite 57/57 tes (867 assert) hijau di PostgreSQL `kamarin_test`. Blokir modul native Vite proyek ikut lepas dengan matinya SAC; build frontend layak diverifikasi user saat dipakai berikutnya.
 
 #### Fokus (5) — tidak ada tabel atau kolom di luar ERD (LULUS, via psql manual)
 
@@ -495,7 +554,7 @@ Dump mentah `(5d)` 169 kolom 19 tabel ERD (dibandingkan baris per baris dengan E
 (169 rows)
 ```
 
-Tes otomatis `SchemaConformityTest` (8 tes, memparse ERD vs `information_schema`) terakhir hijau pada commit yang sama (`e58b8ac`, 2026-10-11: `tests:8, passed:8, assertions:738`); file tes tidak diubah dan kode tidak berubah sejak — namun **jalur otomatis hari ini terblokir SAC**, sehingga verifikasi fokus (5) di atas memakai jalur manual psql.
+Tes otomatis `SchemaConformityTest` (8 tes, memparse ERD vs `information_schema`) terakhir hijau pada commit yang sama (`e58b8ac`, 2026-10-11: `tests:8, passed:8, assertions:738`); file tes tidak diubah dan kode tidak berubah sejak — namun saat verifikasi fokus (5) dijalankan, **jalur otomatis terblokir SAC**, sehingga pembandingnya memakai jalur manual psql seperti di atas. Setelah SAC dinonaktifkan, `SchemaConformityTest` dijalankan ulang dan tetap hijau 8/8 (lihat resolusi bagian fokus (4)) — kedua jalur sepakat: tidak ada tabel/kolom di luar ERD.
 
 #### Rekomendasi (tidak ada perubahan wajib; semua bersumber dokumentasi)
 
