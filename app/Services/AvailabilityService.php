@@ -20,7 +20,7 @@ use Illuminate\Support\Collection as SupportCollection;
  * every availability question is answered here, in plain queries,
  * before any booking row is written. The database layers (row lock in
  * the booking transaction, partial unique index on active nights)
- * belong to BookingService (T-009) and the schema (T-005).
+ * belong to BookingService (T-010) and the schema (T-005).
  *
  * Rules implemented (BR-01, BR-07):
  * - A room is sellable only when rooms.status = active (BR-07.1).
