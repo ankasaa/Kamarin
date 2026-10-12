@@ -10,12 +10,12 @@ Diperbarui terakhir: 2026-10-12
 
 Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi minimal:
 
-- Tugas dan cabang: **T-006 (enum, model, relasi, factory) SELESAI** di `task/T-006-models` (dari `main` `52a5d6c`; `main` tidak disentuh; commit pertama cabang = arsip STATUS `343e842`). Menunggu **review** — penulis kode tidak self-review (AGENTS.md), disarankan agent lain/Claude
-- Hasil verifikasi (dijalankan mandiri): seluruh suite **117/117 tes, 1023 assert** di PostgreSQL `kamarin_test` (sekali saat hijau pertama, sekali sesudah formatter — EXIT=0 keduanya, hilang risky setelah perbaikan assertion); 60 tes baru lulus semua (`tests/Feature/Models` + `tests\Unit\Enums`: 60/60, 154 assert); `composer run lint:check` lulus; Pint merapikan 11 file (import + FQCN docblock, tanpa perubahan perilaku)
-- Yang dibuat: **7 enum backed string** di `app/Enums/` dengan nilai persis aturan 2, termasuk `BookingStatus::holdsNights()` (pending/confirmed/checked_in/checked_out — malam menginap kamar, BR-01) dan `BookingStatus::countsAsSold()` (confirmed/checked_in/checked_out saja — BR-10); **18 model baru + `Role`/`User` dilengkapi** (19 tabel ERD), `#[Fillable]` eksplisit (atribut gaya Laravel 13 yang dipakai repo, bukan `$guarded = []`), relasi sesuai ERD, SoftDeletes hanya `Booking`+`Guest`; **19 factory** — `BookingFactory` punya 7 state per status + helper `createWithNights()` (room_id item == room_id malam, jumlah malam = selisih check-in/out, `is_active` = `holdsNights()`, subtotal/total = Σ harga malam)
-- Cast: 6 kolom uang `integer`, semua kolom date `date:Y-m-d` (tes wajib: `stay_date`/`check_in_date` 2026-10-12 tetap "2026-10-12" di JSON dengan Asia/Makassar), `days_of_week` `array`, kolom enum ke enum yang sesuai, kolom time properti `string`
-- File kunci untuk di-review (path): `app/Enums/BookingStatus.php` .. `app/Enums/HousekeepingStatus.php`, `app/Models/*.php` (19 file), `database/factories/*.php` (19 file), `tests/Feature/Models/DateSerializationTest.php`, `tests/Feature/Models/ModelRelationsTest.php`, `tests/Feature/Models/FactoryValidityTest.php`, `tests/Unit/Enums/BookingStatusTest.php`
-- Catatan jujur: fase merah tidak dijalankan terpisah (model/factory belum ada saat tes ditulis — tes dan implementasi ditulis bersamaan); run pertama sudah hijau, lalu 19 tes dataset factory yang "risky" (tanpa assertion) diberi assertion `exists` → akhirnya 1023 assert. Posisi T-007 (seeder) vs T-008: melompat ke T-008 menunggu keputusan user ("Pertanyaan terbuka" di bawah). **Laporan berikutnya ke user = setelah T-008 lengkap dengan berkas servis dan tesnya** (permintaan user)
+- Tugas dan cabang: **T-008 (AvailabilityService + tes AV-01..AV-13) SELESAI** di `task/T-008-availability-service`, menumpuk dari tip `task/T-006-models` (`b39c8d1`) karena membutuhkan enum/model/factory T-006 yang belum di-merge; `main` tidak disentuh. Menunggu **review user** (T-008 wajib review per backlog)
+- Hasil verifikasi (dijalankan mandiri): tes AV **merah 17 error → hijau 17/17 (45 assert, 0 risky)**; seluruh suite **134/134 tes, 1068 assert, 0 risky** di PostgreSQL `kamarin_test` (sekali saat hijau, sekali sesudah formatter — EXIT=0 keduanya); `composer run lint:check` lulus
+- Yang dibuat: `app/Services/AvailabilityService.php` (lapis 1 dari 3 lapis BR-01.5) dengan 4 metode — `availableRooms()` (kamar aktif bebas malam aktif + blokir, opsional filter kapasitas, `housekeeping` sengaja tidak ikut query BR-07.5), `assertValidStay()` (tanggal berurutan AV-10, check-in lampau hanya owner/manager + alasan AV-11, kapasitas AV-09, kamar aktif AV-05, malam aktif/blokir AV-02/04/06/07, turnover hari sama AV-03), `assertRoomCanBeBlocked()` (AV-12: blokir vs malam aktif — index parsial hanya menjaga booking vs booking), `assertRoomStatusChangeAllowed()` (AV-13/BR-07.2: maintenance/inactive ditolak selama masih ada malam aktif hari ini ke depan) + `app/Exceptions/AvailabilityException` (pesan menyebut kamar + aturan)
+- Konvensi keputusan (dijelaskan di entri log): rentang `room_blocks` **`[start_date, end_date)`** — bukan tebakan: CHECK database `end_date > start_date` melarang blokir satu hari dengan bentuk lain; "masa depan" di AV-13 = `stay_date >= today`; nama role `owner`/`manager` sebagai konstanta privat (nama canonical ditetapkan seeder T-007)
+- File kunci untuk di-review (path): `app/Services/AvailabilityService.php`, `app/Exceptions/AvailabilityException.php`, `tests/Feature/Services/AvailabilityServiceTest.php`
+- Catatan jujur: parameter `excludeBookingId` disiapkan untuk tugas ubah booking (CH) berikutnya, belum dipakai tes AV; temuan iterasi: tipe kembalian helper (Support vs Eloquent Collection), `throwsNoExceptions()` Pest 4 menandai tes risky (dihapus; setiap tes tetap punya `expect()` sendiri), satu import dibersihkan Pint. **Laporan lengkap ke user = entri ini + berkas servis dan tes** (permintaan user terpenuhi)
 
 ---
 
@@ -26,7 +26,7 @@ Salin entri terbaru dari "Log tugas" ke sini, atau tulis ulang singkat. Isi mini
 | Fase 2 (aturan bisnis) | Selesai: `docs/business_rules_kamarin.md` v1.1, keputusan K1 sampai K10 disetujui |
 | Fase 3 (perancangan) | Dokumen selesai dan disetujui. Wireframe Figma masih dikerjakan user |
 | Fase 4 (setup) | Selesai: T-001 (lingkungan), T-003 (tes PostgreSQL + pengaman), T-002 (pruning autentikasi) |
-| Fase 5 (implementasi) | Berjalan: T-006 (enum, model, relasi, factory) **selesai** di `task/T-006-models`, menunggu review; `main` di `52a5d6c` (T-004, T-005, T-005b sudah di-merge). T-007/T-008 menyusul |
+| Fase 5 (implementasi) | Berjalan: T-006 (enum, model, relasi, factory) **selesai** di `task/T-006-models` (menunggu review); T-008 (AvailabilityService) **selesai** di `task/T-008-availability-service` (menumpuk dari T-006, menunggu review user); T-007 (seeder) ditunda atas keputusan user; `main` di `52a5d6c` |
 | ERD | v2.1, dibekukan |
 
 ## Keputusan yang sudah dikunci
@@ -140,6 +140,68 @@ Entri terbaru di atas. Template:
   - Cast enum backed string (`Enum::class` di `casts()`) — Laravel enum casting (laravel.com/docs/13.x/eloquent-mutators bagian "Enum Casting"); semua kolom enum diuji `toBeInstanceOf`
 - Penjelasan untuk sidang (bagaimana dan kenapa): T-006 memindahkan seluruh "kata" domain aplikasi ke tempat yang terpusat: tujuh enum backed string memastikan status booking, opsi pembayaran, dan status kamar/kebersihan hanya bisa bernilai persis seperti yang diizinkan aturan 2 — nilai lain mustahil ditulis karena PHP menolaknya, dan tes menjaga agar daftar nilai tidak bergeser diam-diam dari dokumen. Dua metode murni di `BookingStatus` (`holdsNights()` dan `countsAsSold()`) menempatkan dua pertanyaan bisnis yang paling sering ditanya di satu tempat: status apa yang masih menginap kamar (BR-01) dan status apa yang dihitung terjual (BR-10), tanpa menyentuh logika transisi yang menjadi T-011. Cast `date:Y-m-d` eksplisit adalah pertahanan terhadap bug tanggal paling mahal di aplikasi menginap: tanggal 2026-10-12 yang diserialisasi sebagai instan tengah malam UTC+8 akan tampil sebagai 2026-10-11 di JSON — tes membuktikan hal itu tidak terjadi, lengkap dengan guard bahwa aplikasi benar-benar berjalan di Asia/Makassar. Factory `createWithNights()` bukan sekadar pemercepat tes: ia membangun graf booking-item-malam yang konsisten menurut aturan (room_id sama, jumlah malam = selisih tanggal, `is_active` mengikuti `holdsNights()`), sehingga setiap tes di tugas berikutnya (AvailabilityService, T-008) bisa langsung memakai data yang sah secara database — termasuk FK gabungan yang menolak penyimpangan room_id. Seluruh isi model dibatasi hanya struktur (fillable, cast, relasi); tidak ada satu pun keputusan bisnis di model, sesuai aturan 3 bahwa logika bisnis hidup di `app/Services`.
 - Reviewer: belum ada — menunggu review user atau agent lain (AGENTS.md: agent yang menulis kode tidak me-review kodenya sendiri; self-review tidak dilakukan untuk tugas ini).
+
+### T-008 AvailabilityService dan tes AV-01..AV-13 (2026-10-12)
+
+- Cabang: `task/T-008-availability-service`, **menumpuk dari tip `task/T-006-models` (`b39c8d1`)** — bukan dari `main` — karena AvailabilityService membutuhkan enum, model, dan factory hasil T-006 yang belum di-merge. Keputusan mencatatkan diri di "Pertanyaan terbuka" (urutan T-007 vs T-008, dijawab user). `main` tidak disentuh.
+- Status: selesai, **menunggu review user** (backlog menandai T-008 wajib review).
+- Rujukan yang dibaca sebelum mulai: baris T-008 di `docs/tasks/BACKLOG_FASE4_5.md` (DoD: "Semua tes AV lulus. Turnover hari yang sama diizinkan, blokir dan booking aktif menghalangi, housekeeping tidak memengaruhi tanggal mendatang"), BR-01 (poin 1 sampai 6), BR-07 (poin 1-2, 5), BR-11 tidak ikut (harga = tugas lain), kasus uji AV-01..AV-13 di `docs/rencana_pengujian.md` bagian 4.1, US-13 (anti double booking), US-08 (blokir tanggal), US-05 (status kamar), tabel ERD terkait (`rooms`, `room_blocks`, `booking_nights`, `housekeeping_statuses`).
+- **Keputusan interpretasi (dijelaskan, bukan ditebak):**
+  1. **Rentang `room_blocks` = `[start_date, end_date)`** (blokir malam `start` sampai `end-1`), gaya check-out seperti penginapan lain. Dasar: CHECK database `room_blocks_end_after_start` melarang `end_date = start_date`, jadi bentuk "blokir satu hari" dengan rentang inklusif mustahil; konvensi ini juga sejajar BR-01.3 (turnover hari sama). Jika user menghendaki inklusif, CHECK harus diubah lebih dulu — dicatat agar keputusan ini terlihat saat review.
+  2. **"Masa depan" di BR-07.2/AV-13 = `stay_date >= today`** — malam hari ini dihitung (kamar masih terisi tamu malam ini), bukan besok.
+  3. **Nama role `owner`/`manager`** dibaca dari `users.role->name` lewat konstanta privat; nama canonical role ditetapkan seeder T-007 (belum ada di repo). Bukan hardcode kebijakan properti (aturan 6 tidak dilanggar — ini identitas role, bukan angka kebijakan).
+- Langkah 1 — **tes ditulis lebih dulu** dari kasus uji (`tests/Feature/Services/AvailabilityServiceTest.php`, 17 tes: AV-01..AV-13 termasuk dataset AV-06 tiga status dan AV-10 dua bentuk tanggal). Bukti merah dijalankan sebelum implementasi:
+
+  ```
+  PS> vendor\bin\pest tests\Feature\Services\AvailabilityServiceTest.php
+  {"tool":"pest","result":"failed","tests":17,"passed":0,"assertions":0,"duration_ms":3785,"errors":17,
+   "error_details":["...Target class [App\\Services\\AvailabilityService] does not exist... (17 error_details dengan pesan sama)"]}
+  RED_EXIT=2
+  ```
+
+- Yang dikerjakan — dua file:
+  - `app/Exceptions/AvailabilityException.php` — exception domain; pesan selalu menyebut kamar dan aturan yang menolak.
+  - `app/Services/AvailabilityService.php` — **lapis 1 dari 3 lapis anti double booking (BR-01.5)**; lapis 2 (kunci baris + cek ulang di transaksi) = BookingService T-009, lapis 3 (unique parsial) = database. Empat metode publik:
+    - `availableRooms(property, checkIn, checkOut, ?guestCount, ?excludeBookingId)`: kamar properti berstatus `active` tanpa malam aktif dan tanpa blokir yang menabrak rentang; opsional filter kapasitas kamar; **`housekeeping_statuses` sengaja tidak ikut query apa pun** (BR-07.5). Urutan `id` supaya deterministik.
+    - `assertValidStay(property, checkIn, checkOut, guestCount, rooms, ?user, ?reason, ?excludeBookingId)`: (a) `check_out_date > check_in_date` (AV-10 — lapis validasi sebelum CHECK database), (b) check-in lampau hanya owner/manager dengan alasan tidak kosong (AV-11/BR-01.4), (c) minimal satu kamar, semua kamar milik properti dan `active` (AV-05), (d) `guest_count <=` total kapasitas tipe kamar terpilih (AV-09/BR-01.2), (e) setiap kamar bebas malam aktif (AV-02, AV-06, AV-07) dan bebas blokir (AV-04).
+    - `assertRoomCanBeBlocked(room, start, end)`: menolak blokir yang menabrak malam aktif (AV-12/BR-01.6 — index parsial hanya menjaga booking vs booking); malam tidak aktif tidak menghalangi.
+    - `assertRoomStatusChangeAllowed(room, newStatus)`: `active` selalu boleh; `maintenance`/`inactive` ditolak selama kamar punya malam aktif `stay_date >= today` (AV-13/BR-07.2).
+  - Pertanyaan rentang malam: `stay_date >= check_in` dan `< check_out` (hari check-out bukan malam, aturan 7) dipakai konsisten di semua query; `excludeBookingId` disiapkan untuk tugas CH berikutnya (booking yang diedit tidak boleh menghalangi dirinya sendiri) — belum dipakai tes AV, dicatat jujur.
+- Iterasi merah → hijau menemukan 3 hal, semuanya diperbaiki tanpa melonggarkan tes:
+  1. Tipe kembalian helper salah: `pluck()` pada query builder menghasilkan `Illuminate\Support\Collection`, bukan `Eloquent\Collection` — 11 tes error dengan pesan return type. Diperbaiki dengan tipe yang benar (alias `SupportCollection`), bukan membuang tipe.
+  2. Setelah hijau, 11 tes ditandai **risky** oleh Pest 4: `->throwsNoExceptions()` pada Pest versi ini menandai tes sebagai tidak melakukan assertion. Anotasi dihapus dari 9 deklarasi tes — setiap tes tetap punya assertion `expect()` miliknya sendiri ( AV-12b ditambahi `expect(...)->not->toThrow(...)`), jadi tidak ada assertion yang dilepas.
+  3. Pint menemukan satu import tak terpakai (`Property`) sisa refactor — dibersihkan.
+- Hasil akhir (dijalankan dua kali: saat hijau pertama dan sesudah formatter, EXIT=0 keduanya):
+
+  ```
+  PS> vendor\bin\pest tests\Feature\Services\AvailabilityServiceTest.php
+  {"tool":"pest","result":"passed","tests":17,"passed":17,"assertions":45,"duration_ms":3405}
+  FOCUS_EXIT=0
+  PS> php artisan test
+  {"tool":"pest","result":"passed","tests":134,"passed":134,"assertions":1068,"duration_ms":13041}
+  SUITE_EXIT=0
+  PS> composer run lint
+  {"tool":"pint","result":"fixed","files":["tests/Feature/Services/AvailabilityServiceTest.php (no_unused_imports)"]}
+  PINT_EXIT=0
+  PS> composer run lint:check
+  {"tool":"pint","result":"passed"}
+  LINTCHECK_EXIT=0
+  PS> php artisan test   (sesudah formatter)
+  {"tool":"pest","result":"passed","tests":134,"passed":134,"assertions":1068,"duration_ms":18480}
+  SUITE_EXIT=0
+  ```
+
+  134 = 117 tes (T-006 dan sebelumnya) + 17 tes AV. **0 risky, 0 gagal.**
+- Pemetaan kasus uji → tes (semua lulus): AV-01 tes "offers an active room"; AV-02 "rejects a request that partially overlaps active nights"; AV-03 "allows same-day turnover"; AV-04 "hides a room when a block covers one night" (+ turnover setelah blokir); AV-05 "excludes maintenance and inactive rooms"; AV-06 dataset cancelled/expired/no_show "do not block"; AV-07 "a pending booking blocks the room"; AV-08 "a dirty room stays available for future dates"; AV-09 "rejects a guest count above the total capacity" (+ filter kapasitas `availableRooms`); AV-10 dataset "same day"/"backwards"; AV-11 "guards past check-in dates by role and reason" (resepsionis ditolak, anonim ditolak, manager tanpa alasan ditolak, manager+owner dengan alasan lolos); AV-12 "rejects a block that overlaps active nights" + "allows a block when the overlapping nights are inactive"; AV-13 "rejects maintenance and inactive while future active nights exist" (termasuk: set ke active selalu boleh, dan malam lampau tidak menghalangi).
+- Tes: 134 lulus, 0 gagal, 0 risky (1068 assert, Pest 4.x, PostgreSQL 18). Tes AV: 17 (45 assert).
+- File kunci: `app/Services/AvailabilityService.php`, `app/Exceptions/AvailabilityException.php`, `tests/Feature/Services/AvailabilityServiceTest.php`.
+- Penyimpangan dari dokumen sumber: tidak ada terhadap BR-01/BR-07/AV. Satu hal untuk diperiksa reviewer: konvensi `[start, end)` untuk `room_blocks` diturunkan dari CHECK database (butir keputusan 1 di atas) karena tidak ada dokumen yang menyatakannya eksplisit — jika user menghendaki lain, cukup ubah pembanding `end_date >` menjadi `>=` di dua tempat dan perbarui tes.
+- Perintah kunci dan sumber yang dipakai:
+  - Aturan: BR-01 poin 1-6 (ketersediaan, turnover, validasi, tiga lapis), BR-07 poin 1/2/5 (status kamar, penolakan maintenance, housekeeping bebas), AV-01..AV-13, US-08/US-05/US-13 — semuanya dari `docs/business_rules_kamarin.md` dan `docs/rencana_pengujian.md`
+  - Setengah rentang terbuka `[from, to)` vs malam `stay_date`: standar interval reservasi; konsistensi antara query malam dan query blokir dibuktikan tes AV-03/AV-04 (turnover dengan dan tanpa blokir)
+  - `today()` Laravel dengan pembeku waktu T-003 (`freezeNow`) — diverifikasi AV-11/AV-13 yang memakai "hari ini" deterministik
+- Penjelasan untuk sidang (bagaimana dan kenapa): AvailabilityService adalah satu-satunya tempat aplikasi menjawab "apakah kamar ini bebas pada tanggal ini", sehingga pertanyaan yang sama tidak dijawab berbeda oleh halaman publik, dashboard, dan pembuatan booking. Ia menegakkan BR-01 dan BR-07 di lapis aplikasi pertama: kamar harus aktif, malam aktif menghalangi, blokir menghalangi, turnover hari sama diizinkan, kapasitas dan validasi tanggal diperiksa sebelum baris booking disentuh — sementara lapis kedua (kunci baris) dan ketiga (unique parsial di database) tetap menjadi jaring pengaman yang membuktikan klaim ini di level server. Kasus yang paling mudah salah tangkap dipecahkan dengan penalaran yang bisa ditunjuk: rentang blokir memakai konvensi `[start, end)` karena CHECK database melarang blokir satu hari dengan bentuk lain, dan housekeeping sengaja tidak muncul di satu pun query karena BR-07.5 menyatakan status kebersihan tidak memengaruhi tanggal mendatang. Setiap penolakan memakai exception domain dengan pesan yang menyebut kamar dan aturan, sehingga staf dan tamu bisa menerima penjelasan yang jelas (menuju US-13.2). Kode berjalan merah dulu (17 error karena service belum ada), lalu hijau; temuan selama iterasi (tipe kembalian collection, perilaku `throwsNoExceptions()` di Pest 4) diperbaiki dengan menambah ketepatan kode dan assertion, bukan dengan melonggarkan tes.
+- Reviewer: belum ada — **wajib review user** sesuai backlog T-008 dan aturan AGENTS.md (penulis kode tidak me-review kodenya sendiri). Titik yang layak diperiksa reviewer: konvensi rentang blokir (butir keputusan 1), interpretasi "today" di AV-13, dan pemetaan 13 kasus uji ke 17 tes di atas.
 
 ### Tugas yang sudah selesai (diarsipkan)
 
