@@ -379,6 +379,45 @@ it('ST-04: gates a bank-transfer confirmation on a verified deposit (K6)', funct
         ->booking->refresh()->status)->toBe(BookingStatus::Confirmed);
 });
 
+// ST-04 continues: the required DP is total x deposit_percent / 100 and
+// the percent is a policy column on properties (AGENTS.md rule 6), so it
+// has to move when the property does. With 30% the DP of a 600000 stay
+// is 180000: 200000 must be enough, 100000 must not, and the refusal has
+// to name 180000. A hard-coded 50% would fail in both directions.
+it('ST-04: reads the deposit percent from the property row (BR-03.1)', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $roomType = stRoomType();
+    Property::query()->findOrFail($roomType->property_id)->update(['deposit_percent' => 30]);
+    $actors = stActors();
+
+    $bankTransfer = [
+        'payment_option' => PaymentOption::BankTransfer,
+        'check_in_date' => '2026-07-10',
+        'check_out_date' => '2026-07-12',
+    ];
+
+    [, $enough] = stBooking($roomType, BookingStatus::Pending, $bankTransfer);
+    Payment::factory()->create([
+        'booking_id' => $enough->id,
+        'amount' => 200000,
+        'type' => PaymentType::Deposit,
+        'status' => PaymentStatus::Verified,
+    ]);
+    expect(transitions()->confirm($enough, $actors['receptionist'])
+        ->booking->refresh()->status)->toBe(BookingStatus::Confirmed);
+
+    [, $short] = stBooking($roomType, BookingStatus::Pending, $bankTransfer);
+    Payment::factory()->create([
+        'booking_id' => $short->id,
+        'amount' => 100000,
+        'type' => PaymentType::Deposit,
+        'status' => PaymentStatus::Verified,
+    ]);
+    expect(fn () => transitions()->confirm($short, $actors['receptionist']))
+        ->toThrow(BookingException::class, 'needs a verified deposit of 180000');
+});
+
 // ST-05 / BR-08: no-show is refused before the property's cutoff and
 // accepted from it on, and then every night is released.
 it('ST-05: records a no-show only after the cutoff and frees every night (BR-08)', function () {
@@ -405,6 +444,31 @@ it('ST-05: records a no-show only after the cutoff and frees every night (BR-08)
 
     expect($result->booking->status)->toBe(BookingStatus::NoShow)
         ->and($booking->bookingNights()->where('is_active', true)->count())->toBe(0);
+});
+
+// ST-05 continues: no_show_cutoff_time is a policy column on properties
+// (AGENTS.md rule 6, K7), so the refusal message has to carry whatever
+// the row says. Hard-coding 22:00 would fail on both of these.
+it('ST-05: reads the no-show cutoff from the property row (K7)', function () {
+    $roomType = stRoomType();
+    Property::query()->findOrFail($roomType->property_id)
+        ->update(['no_show_cutoff_time' => '20:00:00']);
+    $actors = stActors();
+
+    freezeNow('2026-06-15 10:00:00');
+
+    [, $booking] = stBooking($roomType, BookingStatus::Confirmed, [
+        'check_in_date' => '2026-06-15',
+        'check_out_date' => '2026-06-17',
+    ]);
+
+    freezeNow('2026-06-15 19:59:00');
+    expect(fn () => transitions()->markNoShow($booking, $actors['receptionist']))
+        ->toThrow(BookingException::class, '2026-06-15 20:00:00');
+
+    freezeNow('2026-06-15 20:00:00');
+    expect(transitions()->markNoShow($booking, $actors['receptionist'])
+        ->booking->status)->toBe(BookingStatus::NoShow);
 });
 
 // ST-06 / BR-05: cancelling releases the nights, so the very same room
@@ -505,7 +569,10 @@ it('ST-08: marks the room dirty and stamps checked_out_at (BR-07)', function () 
     expect($result->booking->status)->toBe(BookingStatus::CheckedOut)
         ->and((string) $result->booking->checked_out_at)->toStartWith('2026-06-15 10:00:00')
         ->and(HousekeepingStatus::query()->where('room_id', $room->id)->sole()->status)
-        ->toBe(Cleanliness::Dirty);
+        ->toBe(Cleanliness::Dirty)
+        // Nothing was ever paid, so the whole 600000 is still owed: the
+        // matrix row warns about it on check-out too (BR-04.2).
+        ->and(implode(' | ', $result->warnings))->toContain('balance');
 });
 
 // ST-09 / BR-04.2, BR-07.5: a room that is not ready and a balance that
@@ -533,6 +600,35 @@ it('ST-09: warns but never blocks a check-in with a room not ready or a balance 
         ->and($text)->toContain('not ready')
         ->and($text)->toContain('balance')
         ->and((string) $result->booking->checked_in_at)->toStartWith('2026-06-15 10:00:00');
+});
+
+// BR-02.2 and BR-08.1: the confirmed -> checked_in row reads "the
+// check-in date is today or already past, and not yet no_show". Both
+// halves are refusals, so both are locked down here.
+it('BR-02.2/BR-08.1: refuses check-in before the stay starts and after the cutoff', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $roomType = stRoomType();
+    $actors = stActors();
+
+    // (a) tomorrow's stay has not started yet.
+    [, $tooEarly] = stBooking($roomType, BookingStatus::Confirmed, [
+        'check_in_date' => '2026-06-16',
+        'check_out_date' => '2026-06-18',
+    ]);
+    expect(fn () => transitions()->checkIn($tooEarly, $actors['receptionist']))
+        ->toThrow(BookingException::class, 'only allowed on or after the check-in date')
+        ->and($tooEarly->refresh()->status)->toBe(BookingStatus::Confirmed);
+
+    // (b) today's cutoff has passed, so the booking is a no-show now.
+    [, $tooLate] = stBooking($roomType, BookingStatus::Confirmed, [
+        'check_in_date' => '2026-06-15',
+        'check_out_date' => '2026-06-17',
+    ]);
+    freezeNow('2026-06-15 22:00:00');
+    expect(fn () => transitions()->checkIn($tooLate, $actors['receptionist']))
+        ->toThrow(BookingException::class, 'no-show cutoff has passed')
+        ->and($tooLate->refresh()->status)->toBe(BookingStatus::Confirmed);
 });
 
 // EX-01 / BR-13.2: a website pending booking past its deadline expires
@@ -606,6 +702,24 @@ it('EX-04: never expires a staff booking, which has no deadline (K5)', function 
     expect(fn () => transitions()->expire($booking))
         ->toThrow(BookingException::class, 'expiry deadline')
         ->and($booking->refresh()->status)->toBe(BookingStatus::Pending);
+});
+
+// BR-13.2: a deadline that has not been reached yet is not an expiry,
+// and the nights must stay sold while the guest still holds the room.
+it('BR-13.2: refuses to expire a booking before its deadline', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $roomType = stRoomType();
+
+    [, $booking] = stBooking($roomType, BookingStatus::Pending, [
+        'created_by_user_id' => null,
+        'expires_at' => now()->addHour(),
+    ]);
+
+    expect(fn () => transitions()->expire($booking))
+        ->toThrow(BookingException::class, 'deadline has not been reached')
+        ->and($booking->refresh()->status)->toBe(BookingStatus::Pending)
+        ->and($booking->bookingNights()->where('is_active', true)->count())->toBe(2);
 });
 
 // EX-06 / BR-13.2: the actor of an expiry is the system, which means an
