@@ -355,6 +355,10 @@ it('creates the foreign keys declared in the ERD', function () {
         $actual[] = "{$row->table_name}.{$row->column_name}->{$row->foreign_table}";
     }
 
+    // information_schema repeats a composite foreign key once per key column
+    // and referenced column pair, so unique the strings before comparing.
+    $actual = array_values(array_unique($actual));
+
     $expected = [
         // Master tables (T-004)
         'users.role_id->roles',
@@ -378,6 +382,9 @@ it('creates the foreign keys declared in the ERD', function () {
         'booking_items.booking_id->bookings',
         'booking_items.room_id->rooms',
         'booking_nights.booking_item_id->booking_items',
+        // Composite FK (booking_item_id, room_id) -> booking_items(id, room_id) from T-005b;
+        // information_schema lists it per key column, so room_id also points at booking_items.
+        'booking_nights.room_id->booking_items',
         'booking_nights.room_id->rooms',
         'booking_nights.rate_id->rates',
         'booking_charges.booking_id->bookings',
@@ -392,6 +399,11 @@ it('creates the foreign keys declared in the ERD', function () {
     foreach ($expected as $foreignKey) {
         expect(in_array($foreignKey, $actual, true))->toBeTrue("Missing foreign key [{$foreignKey}]");
     }
+
+    // Exact set (AGENTS rule 1: the schema matches the ERD exactly): reject
+    // any foreign key that exists in the database but is not declared in the ERD.
+    $unexpected = array_values(array_diff($actual, $expected));
+    expect($unexpected)->toBeEmpty('Foreign keys outside the ERD: '.implode(', ', $unexpected));
 });
 
 it('stores every money column as whole rupiah decimal(12,0)', function () {
