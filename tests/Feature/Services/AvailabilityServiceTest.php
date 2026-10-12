@@ -6,10 +6,11 @@ use App\Models\Booking;
 use App\Models\Role;
 use App\Models\Room;
 use App\Models\RoomBlock;
+use App\Models\RoomType;
 use App\Models\User;
 use App\Services\AvailabilityService;
 
-// Test cases AV-01 .. AV-13 from docs/rencana_pengujian.md section 4.1,
+// Test cases AV-01 .. AV-14 from docs/rencana_pengujian.md section 4.1,
 // covering BR-01 (availability and double booking) and BR-07 (room
 // status and housekeeping). Every test freezes the clock so "today"
 // is deterministic (helper from T-003).
@@ -481,4 +482,33 @@ it('AV-13: a night dated exactly today blocks maintenance and inactive', functio
     ]);
 
     availability()->assertRoomStatusChangeAllowed($ended, RoomStatus::Maintenance);
+});
+
+// AV-14: a room whose room type is inactive is not sellable even when
+// rooms.status is active (BR-01.1 now requires room_types.is_active =
+// true, BR-07.6). It is refused the same way a non-active room status
+// is, both when listing rooms and when validating a stay.
+it('AV-14: excludes rooms whose room type is inactive', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $active = Room::factory()->create(['status' => RoomStatus::Active]);
+
+    $retiredType = RoomType::factory()->create([
+        'property_id' => $active->property_id,
+        'is_active' => false,
+    ]);
+    $retired = Room::factory()->create([
+        'property_id' => $active->property_id,
+        'room_type_id' => $retiredType->id,
+        'status' => RoomStatus::Active,
+    ]);
+
+    $available = availability()->availableRooms($active->property, '2026-07-10', '2026-07-12');
+
+    expect($available->pluck('id')->all())->toBe([$active->id]);
+
+    expectAvailabilityError(
+        fn () => availability()->assertValidStay($active->property, '2026-07-10', '2026-07-12', 2, [$retired]),
+        'inactive room type',
+    );
 });

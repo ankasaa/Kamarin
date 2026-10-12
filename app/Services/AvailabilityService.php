@@ -23,7 +23,8 @@ use Illuminate\Support\Collection as SupportCollection;
  * belong to BookingService (T-010) and the schema (T-005).
  *
  * Rules implemented (BR-01, BR-07):
- * - A room is sellable only when rooms.status = active (BR-07.1).
+ * - A room is sellable only when rooms.status = active (BR-07.1) and
+ *   its room type is active (BR-01.1, BR-07.6, AV-14).
  * - Active booking_nights block a room for their night; cancelled,
  *   expired and no-show bookings have inactive nights and never block
  *   (BR-01).
@@ -69,6 +70,7 @@ class AvailabilityService
         return $property->rooms()
             ->with('roomType')
             ->where('status', RoomStatus::Active->value)
+            ->whereHas('roomType', fn (Builder $query) => $query->where('is_active', true))
             ->when($guestCount !== null, fn (Builder $query) => $query->whereHas(
                 'roomType',
                 fn (Builder $query) => $query->where('capacity', '>=', $guestCount),
@@ -82,7 +84,8 @@ class AvailabilityService
      * Assert that a stay from checkIn to checkOut for guestCount guests
      * in the given rooms is valid according to BR-01: dates ordered,
      * check-in not in the past (unless owner/manager with a reason),
-     * rooms part of the property and active, capacity sufficient, and
+     * rooms part of the property, active and of an active room type,
+     * capacity sufficient, and
      * every night free of active bookings and blocks.
      *
      * @param  iterable<int, Room>  $rooms
@@ -119,6 +122,15 @@ class AvailabilityService
 
             if ($room->status !== RoomStatus::Active) {
                 throw new AvailabilityException("Room {$room->room_number} is not active and cannot be sold (BR-07).");
+            }
+
+            // BR-01.1 + BR-07.6: a room whose room type has been
+            // deactivated is retired stock, not sellable stock, even
+            // though rooms.status is still active (AV-14).
+            if (! $room->roomType->is_active) {
+                throw new AvailabilityException(
+                    "Room {$room->room_number} has an inactive room type and cannot be sold (BR-07.6).",
+                );
             }
         }
 
