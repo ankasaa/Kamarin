@@ -56,7 +56,7 @@ class RoomBlockService
         User $actor,
     ): RoomBlock {
         $this->assertMayBlock($actor);
-        $this->assertReasonIsPresent($reason);
+        $this->assertReasonIsUsable($reason);
 
         $from = $this->toDay($startDate, 'start_date');
         $to = $this->toDay($endDate, 'end_date');
@@ -85,9 +85,18 @@ class RoomBlockService
 
             // BR-01.6: there is no database index guarding a block, so the
             // clash is verified once more after the write, still inside the
-            // same transaction. If anything landed in the gap, this refuses
-            // the block and the whole transaction - including that racing
-            // row - is rolled back.
+            // same transaction. This closes the gap against a conflicting
+            // row that a writer which did NOT take the room lock has
+            // already committed: the clash is seen here, and this whole
+            // transaction - this block included - is rolled back.
+            //
+            // It deliberately claims nothing more than that. Under
+            // PostgreSQL's Read Committed a SELECT sees only data
+            // committed before it began, so an uncommitted row on another
+            // connection is invisible here and cannot be rolled back by
+            // us either. For concurrent writers that follow BR-01.5 the
+            // guard is the FOR UPDATE above, which makes them wait until
+            // this transaction finishes and then re-check for themselves.
             $this->availability->assertRoomCanBeBlocked($lockedRoom, $from, $to, $block->getKey());
 
             return $block;
@@ -148,14 +157,20 @@ class RoomBlockService
 
     /**
      * US-08 "Alasan blokir tercatat": a block has to be explainable later,
-     * so the reason is required rather than silently stored blank.
+     * so the reason is required rather than silently stored blank, and it
+     * has to fit room_blocks.reason (varchar 255) so a bad request is
+     * refused as a domain error instead of surfacing as a QueryException.
      *
      * @throws BookingException
      */
-    private function assertReasonIsPresent(string $reason): void
+    private function assertReasonIsUsable(string $reason): void
     {
         if (trim($reason) === '') {
             throw new BookingException('A reason is required to block a room.');
+        }
+
+        if (mb_strlen($reason) > 255) {
+            throw new BookingException('The reason may not exceed 255 characters.');
         }
     }
 

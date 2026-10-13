@@ -133,6 +133,40 @@ it('requires a non-blank reason', function () {
     expect(RoomBlock::count())->toBe(0);
 });
 
+// room_blocks.reason is varchar(255), so an over-long reason has to be
+// refused here rather than escaping as a QueryException.
+it('refuses a reason longer than the column allows', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $property = Property::factory()->create();
+    $room = blockRoom($property);
+    $manager = blockUser('manager');
+
+    expect(fn () => blockService()->block($room, '2026-07-10', '2026-07-12', str_repeat('a', 256), $manager))
+        ->toThrow(BookingException::class, 'may not exceed 255 characters');
+
+    expect(RoomBlock::count())->toBe(0);
+});
+
+// The range is validated before the transaction opens, so a bad request
+// fails as a domain error instead of falling through to the database CHECK
+// room_blocks_end_after_start.
+it('refuses a reversed or empty range', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $property = Property::factory()->create();
+    $room = blockRoom($property);
+    $manager = blockUser('manager');
+
+    expect(fn () => blockService()->block($room, '2026-07-12', '2026-07-10', 'Backwards', $manager))
+        ->toThrow(BookingException::class, 'end_date must be after start_date');
+
+    expect(fn () => blockService()->block($room, '2026-07-10', '2026-07-10', 'Zero length', $manager))
+        ->toThrow(BookingException::class, 'end_date must be after start_date');
+
+    expect(RoomBlock::count())->toBe(0);
+});
+
 // AGENTS.md rules 3 and 8: the allow-list names the roles that may block,
 // so an unrecognised role is refused rather than silently missed.
 it('only lets the owner and the manager block a room', function () {
@@ -161,7 +195,7 @@ it('only lets the owner and the manager block a room', function () {
 // BR-01.5: creating a block is a writer of room placement, so it must take
 // SELECT ... FOR UPDATE on the room row, ordered by id, and the availability
 // re-check has to come AFTER that lock - otherwise the lock protects nothing.
-it('AV-12: locks the room row for update before rechecking availability', function () {
+it('BR-01.5: locks the room row for update before rechecking availability', function () {
     freezeNow('2026-06-15 10:00:00');
 
     $property = Property::factory()->create();
