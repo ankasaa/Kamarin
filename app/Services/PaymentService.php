@@ -149,9 +149,16 @@ class PaymentService
      * receptionist could hand money back for any amount, with no reason
      * and no log. See assertMayRecordType().
      *
+     * A bank transfer or an OTA payout that carries no reference cannot
+     * be traced back to the platform that moved the money, so it is
+     * refused here rather than stored as an untraceable row. Cash and
+     * card/QRIS are handed over at the desk and need none. That closes
+     * Pertanyaan Terbuka 5. See normaliseReferenceNumber().
+     *
      * @throws PaymentException when the role may not handle payments, the
-     *                          amount cannot exist, or the role may not
-     *                          write this payment type
+     *                          amount cannot exist, the role may not
+     *                          write this payment type, or a required
+     *                          reference number is missing
      */
     public function record(
         Booking $booking,
@@ -169,6 +176,8 @@ class PaymentService
         if ($amount <= 0) {
             throw new PaymentException('A payment amount must be a positive number of rupiah.');
         }
+
+        $referenceNumber = $this->normaliseReferenceNumber($method, $referenceNumber);
 
         return Payment::query()->create([
             'booking_id' => $booking->id,
@@ -372,5 +381,34 @@ class PaymentService
             'Role "%s" may record deposits and settlements, but only the owner or the manager may record a refund (BR-04.3).',
             $actor->role?->name ?? 'nobody',
         ));
+    }
+
+    /**
+     * Pertanyaan Terbuka 5 (decision M5): a bank transfer and an OTA
+     * payout are only traceable through the reference the platform
+     * gave, so one without a reference is refused rather than stored.
+     * Cash and card/QRIS are handed over at the desk and have nothing
+     * to trace.
+     *
+     * A reference of blank spaces counts as missing, and is stored as
+     * null when the method needs none, so the column never holds noise
+     * that a later search would have to work around.
+     *
+     * @throws PaymentException when a bank transfer or OTA reference is missing
+     */
+    private function normaliseReferenceNumber(PaymentMethod $method, ?string $referenceNumber): ?string
+    {
+        $referenceNumber = $referenceNumber === null ? null : trim($referenceNumber);
+
+        $needsReference = $method === PaymentMethod::BankTransfer || $method === PaymentMethod::Ota;
+
+        if ($needsReference && ($referenceNumber === null || $referenceNumber === '')) {
+            throw new PaymentException(sprintf(
+                'A payment by %s needs a reference number so the transfer can be traced back (BR-04.3).',
+                $method->value,
+            ));
+        }
+
+        return $referenceNumber === '' ? null : $referenceNumber;
     }
 }

@@ -114,9 +114,19 @@ function pySeedPayment(
     ]);
 }
 
-/** Record a payment through the service and verify it, as staff would. */
-function pyPaid(Booking $booking, User $actor, int $amount, PaymentType $type = PaymentType::Deposit): Payment
-{
+/**
+ * Record a payment through the service and verify it, as staff would.
+ * A bank transfer carries the reference the platform gives, which
+ * record() now requires (BR-04.3, decision M5), so the helper has to
+ * have one to hand over.
+ */
+function pyPaid(
+    Booking $booking,
+    User $actor,
+    int $amount,
+    PaymentType $type = PaymentType::Deposit,
+    string $referenceNumber = 'TRF-2026-0615',
+): Payment {
     $payment = payments()->record(
         $booking,
         $actor,
@@ -124,6 +134,8 @@ function pyPaid(Booking $booking, User $actor, int $amount, PaymentType $type = 
         $type,
         PaymentMethod::BankTransfer,
         '2026-06-15',
+        null,
+        $referenceNumber,
     );
 
     return payments()->verify($payment, $actor);
@@ -202,7 +214,7 @@ it('PY-03: ignores payments that are pending or failed (BR-04.3)', function () {
     $booking = pyBooking($roomType); // total 600000
 
     // Recorded but not yet verified: still unpaid.
-    $pending = payments()->record($booking, $actor, 300000, PaymentType::Deposit, PaymentMethod::BankTransfer, '2026-06-15');
+    $pending = payments()->record($booking, $actor, 300000, PaymentType::Deposit, PaymentMethod::BankTransfer, '2026-06-15', null, 'TRF-2026-0615-02');
 
     expect($pending->status)->toBe(PaymentStatus::Pending)
         ->and(payments()->netPaid($booking))->toBe(0)
@@ -651,4 +663,63 @@ it('BR-04.3: reserves a manual refund for the owner and the manager', function (
         ->and(payments()->verifiedDeposit($booking))->toBe(400000)
         ->and(payments()->netPaid($booking))->toBe(250000)
         ->and(payments()->balance($booking))->toBe(350000);
+});
+
+// BR-04.3, decision M5 on Pertanyaan Terbuka no. 5: a bank transfer and
+// an OTA payout cannot be traced back to the platform without the
+// reference it gave, so record() refuses to store one that is empty.
+// Cash and card/QRIS are handed over at the desk and need no reference,
+// which matches the ERD leaving the column nullable.
+it('BR-04.3: refuses a bank transfer or OTA payment recorded without a reference number', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $roomType = pyRoomType();
+    $actor = pyActors()[RoleName::Receptionist->value];
+    $booking = pyBooking($roomType);
+
+    // Missing, blank and whitespace-only are all the same refusal, and
+    // none of them writes a row.
+    foreach ([null, '', '   '] as $reference) {
+        foreach ([PaymentMethod::BankTransfer, PaymentMethod::Ota] as $method) {
+            expect(fn () => payments()->record(
+                $booking,
+                $actor,
+                300000,
+                PaymentType::Deposit,
+                $method,
+                '2026-06-15',
+                null,
+                $reference,
+            ))->toThrow(PaymentException::class, 'needs a reference number');
+        }
+    }
+
+    expect($booking->payments()->count())->toBe(0)
+        ->and(payments()->netPaid($booking))->toBe(0);
+
+    // The same transfer with its reference is accepted.
+    $transfer = payments()->record(
+        $booking,
+        $actor,
+        300000,
+        PaymentType::Deposit,
+        PaymentMethod::BankTransfer,
+        '2026-06-15',
+        'Siti Rahayu',
+        'TRF-2026-0615-03',
+    );
+
+    expect($transfer->reference_number)->toBe('TRF-2026-0615-03');
+
+    // Cash and card/QRIS stay optional: the money is counted at the
+    // desk, and an absent reference is stored as null rather than as an
+    // empty string.
+    foreach ([PaymentMethod::Cash, PaymentMethod::CardOrQris] as $method) {
+        expect(payments()->record($booking, $actor, 100000, PaymentType::Settlement, $method, '2026-06-15', null, null)->reference_number)
+            ->toBeNull()
+            ->and(payments()->record($booking, $actor, 100000, PaymentType::Settlement, $method, '2026-06-15', null, '')->reference_number)
+            ->toBeNull();
+    }
+
+    expect($booking->payments()->count())->toBe(5);
 });
