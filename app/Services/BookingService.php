@@ -60,7 +60,7 @@ class BookingService
      *   'roles'    the RoleName values allowed to run it (staff rows)
      *   'system'   true for the one row the scheduler runs; it takes no actor
      *   'requires' the condition checked before anything is written
-     *   'warns'    conditions reported but never blocking (BR-04.2, BR-07.5)
+     *   'warns'    conditions reported but never blocking (BR-04.2, BR-07.5, BR-08.3)
      *   'effects'  what changes besides bookings.status itself
      *
      * A from-status with no entry at all - checked_out, cancelled,
@@ -101,7 +101,7 @@ class BookingService
             'checked_in' => [
                 'roles' => [RoleName::Owner, RoleName::Manager, RoleName::Receptionist],
                 'requires' => 'check_in_window',
-                'warns' => ['housekeeping', 'balance'],
+                'warns' => ['housekeeping', 'balance', 'late_check_in'],
                 'effects' => ['mark_checked_in'],
             ],
             'no_show' => [
@@ -352,10 +352,10 @@ class BookingService
      *
      * A room that is not ready and a balance still due are warnings that
      * travel back in the result; neither blocks the check-in (BR-04.2,
-     * BR-07.5, ST-09).
+     * BR-07.5, ST-09). Arriving after the no-show cutoff is the third
+     * warning: BR-08.3 lets a late guest in and only says so (ST-10).
      *
-     * @throws BookingException before the stay starts or once the
-     *                          no-show cutoff has passed
+     * @throws BookingException before the stay starts
      */
     public function checkIn(Booking $booking, ?User $actor = null): BookingTransitionResult
     {
@@ -589,8 +589,12 @@ class BookingService
     /**
      * Matrix row confirmed -> checked_in: the stay must already have
      * started (BR-02.2 allows an early check-in on the day itself, not
-     * before it) and the no-show cutoff must not have passed yet, or the
-     * booking should be a no-show instead.
+     * before it).
+     *
+     * The no-show cutoff is deliberately absent here. BR-08.3 makes it
+     * a door that only opens markNoShow(): a guest who turns up after
+     * it is a late arrival, not a refusal, so the lateness is reported
+     * as a warning by lateCheckinWarnings() instead (ST-10).
      *
      * @throws BookingException
      */
@@ -604,12 +608,6 @@ class BookingService
                 'Check-in is only allowed on or after the check-in date %s.',
                 $checkInDay->toDateString(),
             ));
-        }
-
-        if (! now()->lt($this->noShowCutoff($booking))) {
-            throw new BookingException(
-                'The no-show cutoff has passed; record the booking as a no-show instead (BR-08.1).',
-            );
         }
     }
 
@@ -695,6 +693,7 @@ class BookingService
             $collected = match ($warn) {
                 'balance' => $this->balanceWarnings($booking),
                 'housekeeping' => $this->housekeepingWarnings($booking),
+                'late_check_in' => $this->lateCheckinWarnings($booking),
                 default => throw new LogicException("Unknown transition warning \"{$warn}\"."),
             };
 
@@ -744,6 +743,27 @@ class BookingService
             ->sum('amount');
 
         return (int) $settled - (int) $refunded;
+    }
+
+    /**
+     * BR-08.3 (ST-10): arriving after the property's no-show cutoff is
+     * reported, never refused. Wording is deliberately not an error: the
+     * booking is still confirmed and the guest is simply late.
+     *
+     * @return array<int, string>
+     */
+    private function lateCheckinWarnings(Booking $booking): array
+    {
+        $cutoff = $this->noShowCutoff($booking);
+
+        if (now()->lt($cutoff)) {
+            return [];
+        }
+
+        return [sprintf(
+            'The no-show cutoff (%s) has already passed; this is a late check-in (BR-08.3).',
+            $cutoff->toDateTimeString(),
+        )];
     }
 
     /**

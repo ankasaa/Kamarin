@@ -22,7 +22,7 @@ use App\Models\User;
 use App\Services\BookingService;
 use Illuminate\Support\Carbon;
 
-// Test cases ST-01 .. ST-09 (section 4.4) and EX-01 .. EX-04, EX-06
+// Test cases ST-01 .. ST-10 (section 4.4) and EX-01 .. EX-04, EX-06
 // (section 4.7) of docs/rencana_pengujian.md, for the transition matrix
 // of docs/business_rules_kamarin.md section 5 together with BR-03,
 // BR-04, BR-05, BR-07, BR-08 and BR-13. EX-05 is deliberately absent:
@@ -602,33 +602,76 @@ it('ST-09: warns but never blocks a check-in with a room not ready or a balance 
         ->and((string) $result->booking->checked_in_at)->toStartWith('2026-06-15 10:00:00');
 });
 
-// BR-02.2 and BR-08.1: the confirmed -> checked_in row reads "the
-// check-in date is today or already past, and not yet no_show". Both
-// halves are refusals, so both are locked down here.
-it('BR-02.2/BR-08.1: refuses check-in before the stay starts and after the cutoff', function () {
+// BR-02.2: the confirmed -> checked_in row still requires the stay to
+// have started. The second half of the old condition - "and not yet
+// no_show" - was dropped by BR-08.3 and is covered by ST-10 below.
+it('BR-02.2: refuses check-in before the stay starts', function () {
     freezeNow('2026-06-15 10:00:00');
 
     $roomType = stRoomType();
     $actors = stActors();
 
-    // (a) tomorrow's stay has not started yet.
     [, $tooEarly] = stBooking($roomType, BookingStatus::Confirmed, [
         'check_in_date' => '2026-06-16',
         'check_out_date' => '2026-06-18',
     ]);
+
     expect(fn () => transitions()->checkIn($tooEarly, $actors['receptionist']))
         ->toThrow(BookingException::class, 'only allowed on or after the check-in date')
         ->and($tooEarly->refresh()->status)->toBe(BookingStatus::Confirmed);
+});
 
-    // (b) today's cutoff has passed, so the booking is a no-show now.
-    [, $tooLate] = stBooking($roomType, BookingStatus::Confirmed, [
+// ST-10 / BR-08.3: the no-show cutoff only opens the door to recording
+// a no-show; it never turns away a guest who actually turns up while
+// the booking is still confirmed. Check-in after the cutoff therefore
+// succeeds and reports how late the arrival is as a warning.
+it('ST-10: checks in after the no-show cutoff with a warning instead of refusing (BR-08.3)', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $roomType = stRoomType();
+    $actors = stActors();
+
+    // Exactly at the cutoff: the matrix says "Sekarang >= ...", so the
+    // booking is already recordable as a no-show but may still be
+    // checked in.
+    [, $atCutoff] = stBooking($roomType, BookingStatus::Confirmed, [
         'check_in_date' => '2026-06-15',
         'check_out_date' => '2026-06-17',
     ]);
+
     freezeNow('2026-06-15 22:00:00');
-    expect(fn () => transitions()->checkIn($tooLate, $actors['receptionist']))
-        ->toThrow(BookingException::class, 'no-show cutoff has passed')
-        ->and($tooLate->refresh()->status)->toBe(BookingStatus::Confirmed);
+    $result = transitions()->checkIn($atCutoff, $actors['receptionist']);
+    $text = implode(' | ', $result->warnings);
+
+    expect($result->booking->status)->toBe(BookingStatus::CheckedIn)
+        ->and((string) $result->booking->checked_in_at)->toStartWith('2026-06-15 22:00:00')
+        ->and($text)->toContain('no-show cutoff')
+        ->and($text)->toContain('late');
+
+    // Well past it, still a plain late arrival rather than a refusal.
+    [, $afterCutoff] = stBooking($roomType, BookingStatus::Confirmed, [
+        'check_in_date' => '2026-06-15',
+        'check_out_date' => '2026-06-17',
+    ]);
+
+    freezeNow('2026-06-15 23:30:00');
+    $late = transitions()->checkIn($afterCutoff, $actors['receptionist']);
+
+    expect($late->booking->status)->toBe(BookingStatus::CheckedIn)
+        ->and(implode(' | ', $late->warnings))->toContain('no-show cutoff');
+
+    // Before the cutoff nothing is said about being late: the ordinary
+    // check-in stays warning-free apart from its own conditions.
+    [, $onTime] = stBooking($roomType, BookingStatus::Confirmed, [
+        'check_in_date' => '2026-06-15',
+        'check_out_date' => '2026-06-17',
+    ]);
+
+    freezeNow('2026-06-15 21:00:00');
+    $early = transitions()->checkIn($onTime, $actors['receptionist']);
+
+    expect($early->booking->status)->toBe(BookingStatus::CheckedIn)
+        ->and(implode(' | ', $early->warnings))->not->toContain('no-show cutoff');
 });
 
 // EX-01 / BR-13.2: a website pending booking past its deadline expires
