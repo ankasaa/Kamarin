@@ -19,6 +19,10 @@ use Throwable;
  * Each booking is handled inside its own try-catch block so that an isolated failure
  * (e.g. transient database lock or unexpected state) does not abort the processing
  * of remaining overdue bookings.
+ *
+ * The final report always states both counts, and the command exits non-zero
+ * (Command::FAILURE) whenever at least one booking failed, so that a partial
+ * failure is visible to the scheduler and to cron monitoring (T-014b).
  */
 class ExpirePendingBookings extends Command
 {
@@ -76,11 +80,13 @@ class ExpirePendingBookings extends Command
         }
 
         $this->info(sprintf(
-            'Expired %d pending booking(s)%s.',
+            'Expired %d pending booking(s), %d failed.',
             $expiredCount,
-            $failedCount > 0 ? sprintf(' (%d failed)', $failedCount) : '',
+            $failedCount,
         ));
 
-        return Command::SUCCESS;
+        // A partial failure must be visible to the scheduler and to cron
+        // monitoring, so the command exits non-zero whenever anything failed.
+        return $failedCount > 0 ? Command::FAILURE : Command::SUCCESS;
     }
 }

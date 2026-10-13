@@ -142,7 +142,9 @@ it('EX-05: is idempotent when run multiple times in succession', function () {
 
 // Partial failure scenario: if processing one booking throws an exception,
 // the loop must not abort; subsequent bookings must still be processed.
-it('continues processing remaining bookings when one booking fails (partial failure recovery)', function () {
+// The run must report both counts and exit non-zero so that cron monitoring
+// can see the failure (T-014b).
+it('EX-05: reports both counts and exits non-zero on partial failure while still processing the rest (T-014b)', function () {
     freezeNow('2026-06-15 12:00:00');
 
     $roomType = consoleRoomType();
@@ -170,10 +172,10 @@ it('continues processing remaining bookings when one booking fails (partial fail
 
     app()->instance(BookingService::class, $mockService);
 
-    // The command catches the exception, logs it, and continues
+    // The command catches the exception, logs it, reports both counts and fails.
     $this->artisan('bookings:expire-pending')
-        ->expectsOutputToContain('Expired 1 pending booking(s)')
-        ->assertSuccessful();
+        ->expectsOutputToContain('Expired 1 pending booking(s), 1 failed.')
+        ->assertFailed();
 
     // First booking remains pending because its transaction failed
     expect($firstBooking->refresh()->status)->toBe(BookingStatus::Pending)
@@ -183,8 +185,12 @@ it('continues processing remaining bookings when one booking fails (partial fail
 });
 
 // Schedule assertion: bookings:expire-pending is scheduled every 5 minutes
-// with withoutOverlapping enabled.
-it('schedules bookings:expire-pending every five minutes without overlapping', function () {
+// with withoutOverlapping enabled (T-014, T-014b).
+//
+// The overlap lock must expire after 10 minutes rather than the framework
+// default of 1440 minutes (24 hours). A run that dies mid-way would otherwise
+// block expiry for a whole day, while the command only runs every 5 minutes.
+it('schedules bookings:expire-pending every five minutes with a ten minute overlap lock (T-014b)', function () {
     $schedule = app(Schedule::class);
 
     $event = collect($schedule->events())->first(function (Event $event) {
@@ -194,5 +200,6 @@ it('schedules bookings:expire-pending every five minutes without overlapping', f
 
     expect($event)->not->toBeNull('bookings:expire-pending is not registered in the console schedule.')
         ->and($event->expression)->toBe('*/5 * * * *')
-        ->and($event->withoutOverlapping)->toBeTrue();
+        ->and($event->withoutOverlapping)->toBeTrue()
+        ->and($event->expiresAt)->toBe(10);
 });
