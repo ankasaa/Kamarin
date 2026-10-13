@@ -1,6 +1,8 @@
-# Business Rules Kamarin (Draf v1.3)
+# Business Rules Kamarin (Draf v1.4)
 
 Diperbarui: 8 Oktober 2026
+
+**Perubahan v1.4:** keputusan pemilik dari review T-012 didokumentasikan: refund manual hanya Owner dan Manager (BR-04 butir 4), nomor referensi wajib untuk transfer bank dan OTA (BR-04 butir 5). Kasus uji PY-09 dan PY-10.
 
 **Perubahan v1.3:** (1) batas waktu no-show hanya membuka kemungkinan mencatat no-show, tidak melarang check-in tamu yang datang terlambat selama booking masih confirmed (BR-08 butir 3, baris matriks confirmed ke checked_in, kasus uji ST-10). (2) Pengembalian dana dimodelkan hanya sebagai baris pembayaran baru bertipe `refund` berstatus verified. Baris pembayaran asli tetap verified dan status `refunded` tidak dipakai di MVP, supaya rumus terbayar tidak mengurangi dua kali (BR-04 butir 3, BR-05 butir 3).
 
@@ -118,6 +120,8 @@ Aturan bernomor BR-01 sampai BR-10 mengikuti draf dari catatan wawancara. BR-11 
 1. Sisa tagihan dibayar saat check-in (default).
 2. Saat check-in dan check-out, jika sisa tagihan masih ada, sistem menampilkan peringatan tetapi tidak memblokir.
 3. Pembayaran dicatat manual oleh staf: jumlah, tipe, metode, nama pembayar (`payer_name`, bisa berbeda dari nama tamu), tanggal, referensi, dan bukti opsional. Alur status pembayaran: pending → verified atau failed. Pengembalian dana dicatat sebagai baris baru bertipe `refund` (berstatus verified saat dicatat), sedangkan baris pembayaran aslinya tetap verified. Status `refunded` tidak dipakai di MVP agar rumus terbayar (BR-12) tidak mengurangi dua kali.
+4. Pencatatan manual pembayaran bertipe `refund` (mis. pengembalian akibat percepat check-out) hanya boleh dilakukan Owner dan Manager. Resepsionis memperoleh refund hanya lewat pembatalan yang mengikuti saran DP (BR-05).
+5. `reference_number` wajib untuk metode `bank_transfer` dan `ota`, dan opsional untuk `cash` dan `card_or_qris`. Refund yang dibuat otomatis oleh pembatalan tidak memerlukan referensi.
 
 ### BR-13 Kedaluwarsa booking pending 🟦
 

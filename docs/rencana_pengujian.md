@@ -133,6 +133,8 @@ Catatan penting:
 | PY-06 | Pembatalan tepat pada batas `free_cancel_days`, dan sehari lebih dekat | Pada batas: saran DP dikembalikan. Lebih dekat: saran DP hangus | BR-05 |
 | PY-07 | Pembatalan dengan keputusan DP dikembalikan | Dibuat satu baris refund verified senilai DP bersih. Baris DP asli tetap verified. Terbayar menjadi nol | BR-04 butir 3, BR-05 butir 3 |
 | PY-08 | Resepsionis membatalkan dengan keputusan DP berbeda dari saran, lalu Owner atau Manager | Resepsionis ditolak, Owner dan Manager diizinkan | BR-05, Keterangan 2 matriks status |
+| PY-09 | Resepsionis mencatat pembayaran bertipe refund secara manual, lalu Owner atau Manager | Resepsionis ditolak sebelum ada baris yang ditulis, Owner dan Manager diizinkan | BR-04 butir 4 |
+| PY-10 | Mencatat pembayaran tanpa referensi dengan metode bank_transfer, ota, cash, card_or_qris | bank_transfer dan ota ditolak (kosong, null, atau hanya spasi), cash dan card_or_qris diterima | BR-04 butir 5 |
 
 ### 4.7 Kedaluwarsa (EX)
 
