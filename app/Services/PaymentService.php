@@ -312,18 +312,20 @@ class PaymentService
     {
         $role = RoleName::tryFrom((string) $actor->role?->name);
 
-        if ($role === null || in_array($role, [
+        // Allow-list, not deny-list: a role the enum does not know is
+        // refused along with housekeeping. Flipping this condition turns
+        // every stranger into a cashier, which is exactly what the T-012
+        // review caught.
+        if ($role === null || ! in_array($role, [
             RoleName::Owner,
             RoleName::Manager,
             RoleName::Receptionist,
         ], true)) {
-            return;
+            throw new PaymentException(sprintf(
+                'Role "%s" may not record or verify payments (BR-04.3).',
+                $actor->role?->name ?? 'nobody',
+            ));
         }
-
-        throw new PaymentException(sprintf(
-            'Role "%s" may not record or verify payments (BR-04.3).',
-            $actor->role?->name ?? 'nobody',
-        ));
     }
 
     /** Keterangan 2: only the owner and the manager may deviate. */

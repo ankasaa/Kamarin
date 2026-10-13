@@ -490,6 +490,70 @@ it('BR-04.3: lets owner, manager and receptionist handle payments and refuses ev
         ->and($booking->payments()->count())->toBe(4);
 });
 
+// BR-04.3, second half: a role outside the canonical four is refused by
+// the same door as housekeeping. users.role_id is not nullable, so
+// "unknown" has to be a real role row whose name is not one of the four
+// values of RoleName. Without this case the allow-list could silently
+// admit everyone - which is what the review of T-012 caught.
+it('BR-04.3: refuses a role that is not one of the canonical four', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $roomType = pyRoomType();
+    $receptionist = pyActors()[RoleName::Receptionist->value];
+    $booking = pyBooking($roomType);
+
+    $stranger = User::factory()->create([
+        'role_id' => Role::factory()->create(['name' => 'night_audit'])->id,
+    ]);
+
+    // The fixture really is outside RoleName, or the test would prove
+    // nothing.
+    expect(RoleName::tryFrom((string) $stranger->role?->name))->toBeNull();
+
+    expect(fn () => payments()->record($booking, $stranger, 100000, PaymentType::Deposit, PaymentMethod::Cash, '2026-06-15'))
+        ->toThrow(PaymentException::class, 'night_audit');
+
+    $pending = payments()->record($booking, $receptionist, 150000, PaymentType::Deposit, PaymentMethod::Cash, '2026-06-15');
+
+    expect(fn () => payments()->verify($pending, $stranger))
+        ->toThrow(PaymentException::class, 'night_audit');
+
+    // Both refusals wrote nothing at all.
+    expect($pending->refresh()->status)->toBe(PaymentStatus::Pending)
+        ->and($booking->payments()->count())->toBe(1);
+});
+
+// BR-04.3: verification is the second act, not a repeat of the first.
+// The rule defines the flow pending -> verified or failed, so only a
+// pending row can be verified. Without this, clicking "verify" twice on
+// the same payment would silently re-approve money that may already have
+// failed or been refunded.
+it('BR-04.3: only verifies a payment that is still pending', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $roomType = pyRoomType();
+    $actor = pyActors()[RoleName::Receptionist->value];
+    $booking = pyBooking($roomType);
+
+    // Already verified: refused, and the row is untouched.
+    $verified = pyPaid($booking, $actor, 100000);
+
+    expect(fn () => payments()->verify($verified->fresh(), $actor))
+        ->toThrow(PaymentException::class, 'Only a pending payment can be verified; this one is verified');
+
+    // Failed: refused as well.
+    $failed = pySeedPayment($booking, 100000, PaymentType::Deposit, PaymentStatus::Failed);
+
+    expect(fn () => payments()->verify($failed, $actor))
+        ->toThrow(PaymentException::class, 'this one is failed');
+
+    // Refused both times without moving a single rupiah.
+    expect($verified->refresh()->status)->toBe(PaymentStatus::Verified)
+        ->and($failed->refresh()->status)->toBe(PaymentStatus::Failed)
+        ->and($booking->payments()->count())->toBe(2)
+        ->and(payments()->netPaid($booking))->toBe(100000);
+});
+
 // BR-12.3: paying more than the total is flagged as an overpayment
 // rather than clamped, so staff can see it and settle it with a refund
 // or a note.
