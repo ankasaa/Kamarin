@@ -120,6 +120,8 @@ Catatan penting:
 | CH-09 | Booking checked_in: ubah check-in lalu perpanjang | Ubah check-in ditolak, perpanjang berhasil | BR-06 |
 | CH-10 | Terbayar melebihi total setelah perubahan | Ditandai kelebihan bayar | BR-12 |
 | CH-11 | Perubahan pada booking pending | `expires_at` tidak berubah | BR-13 |
+| CH-12 | Resepsionis memperpanjang booking checked_in yang `check_in_date`-nya sudah lampau | Berhasil (aturan tanggal lampau hanya berlaku bila `check_in_date` dipindah) | BR-06, BR-01 butir 4 |
+| CH-13 | Pindah kamar ke kamar bertipe berbeda, dan pindah pada booking multi-kamar | Ditolak dengan pesan eksplisit (di luar MVP, lihat T-017) | BR-06 |
 
 ### 4.6 Pembayaran (PY)
 
