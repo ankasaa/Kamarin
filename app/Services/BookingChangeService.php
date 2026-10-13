@@ -6,6 +6,7 @@ use App\Enums\BookingStatus;
 use App\Enums\RoleName;
 use App\Exceptions\AvailabilityException;
 use App\Exceptions\BookingException;
+use App\Exceptions\PricingException;
 use App\Models\Booking;
 use App\Models\BookingChangeLog;
 use App\Models\BookingItem;
@@ -15,6 +16,7 @@ use App\Models\User;
 use App\Support\BookingChangeResult;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Exception;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -72,6 +74,16 @@ class BookingChangeService
      */
     private const PREVIEW_REASON = 'preview';
 
+    /**
+     * Direction hints for extend() and shorten(). The check-out must
+     * really move in the promised direction, and it is compared against
+     * the booking as it sits behind the row lock - never against the
+     * model the caller happened to hold.
+     */
+    private const MOVES_LATER = 'later';
+
+    private const MOVES_EARLIER = 'earlier';
+
     public function __construct(
         private readonly AvailabilityService $availability,
         private readonly PricingService $pricing,
@@ -102,27 +114,59 @@ class BookingChangeService
         $from = $this->toDay($checkIn);
         $to = $this->toDay($checkOut);
 
+        return $this->runDateChange($booking, $from, $to, $actor, $reason, direction: null);
+    }
+
+    /**
+     * The single transaction behind changeDates(), extend() and
+     * shorten().
+     *
+     * A null $from means "keep whatever check-in the booking already
+     * has"; it is resolved from the row once it is locked, never from
+     * the caller's model, so two staff working on the same booking
+     * cannot act on a date that has just moved (review finding N2).
+     */
+    private function runDateChange(
+        Booking $booking,
+        ?CarbonImmutable $from,
+        CarbonImmutable $to,
+        User $actor,
+        string $reason,
+        ?string $direction,
+    ): BookingChangeResult {
         try {
-            return DB::transaction(
-                fn (): BookingChangeResult => $this->performDateChange($booking, $from, $to, $actor, $reason),
-            );
+            return DB::transaction(fn (): BookingChangeResult => $this->performDateChange(
+                $booking,
+                $from,
+                $to,
+                $actor,
+                $reason,
+                $direction,
+            ));
         } catch (QueryException $e) {
             throw $this->translateDuplicateNight($e);
         }
     }
 
     /**
-     * The transaction behind changeDates(): everything runs with the
-     * booking and the room rows already locked.
+     * The transaction body: everything runs with the booking and the
+     * room rows already locked.
      */
     private function performDateChange(
         Booking $booking,
-        CarbonImmutable $from,
+        ?CarbonImmutable $from,
         CarbonImmutable $to,
         User $actor,
         string $reason,
+        ?string $direction,
     ): BookingChangeResult {
         $booking = $this->lockBooking($booking);
+
+        $from ??= $this->toDay($booking->check_in_date);
+
+        if ($direction !== null) {
+            $this->assertCheckOutMoves($booking, $to, $direction);
+        }
 
         $this->assertStatusAllows($booking, self::DATES_CHANGED, $from);
 
@@ -161,6 +205,10 @@ class BookingChangeService
      * "perpanjang"), which is the shape a guest asking for more nights
      * actually needs.
      *
+     * Both the base dates and the direction check are read from the row
+     * once it is locked, so a colleague's change made a moment earlier
+     * is never measured against a stale model (review finding N2).
+     *
      * @throws BookingException when the new check-out is not later, or
      *                          when the change itself is refused
      */
@@ -170,13 +218,17 @@ class BookingChangeService
         User $actor,
         string $reason,
     ): BookingChangeResult {
-        $to = $this->toDay($newCheckOut);
+        $this->assertMayChange($actor);
+        $this->assertReasonGiven($reason);
 
-        if ($to <= $this->toDay($booking->check_out_date)) {
-            throw new BookingException('An extension must move the check-out date later; use shorten() to move it earlier.');
-        }
-
-        return $this->changeDates($booking, $booking->check_in_date, $to, $actor, $reason);
+        return $this->runDateChange(
+            $booking,
+            from: null,
+            to: $this->toDay($newCheckOut),
+            actor: $actor,
+            reason: $reason,
+            direction: self::MOVES_LATER,
+        );
     }
 
     /**
@@ -195,18 +247,17 @@ class BookingChangeService
         User $actor,
         string $reason,
     ): BookingChangeResult {
-        $to = $this->toDay($newCheckOut);
-        $current = $this->toDay($booking->check_out_date);
+        $this->assertMayChange($actor);
+        $this->assertReasonGiven($reason);
 
-        if ($to >= $current) {
-            throw new BookingException('A shortening must move the check-out date earlier; use extend() to move it later.');
-        }
-
-        if ($to <= $this->toDay($booking->check_in_date)) {
-            throw new BookingException('A booking must keep at least one night (BR-01.2).');
-        }
-
-        return $this->changeDates($booking, $booking->check_in_date, $to, $actor, $reason);
+        return $this->runDateChange(
+            $booking,
+            from: null,
+            to: $this->toDay($newCheckOut),
+            actor: $actor,
+            reason: $reason,
+            direction: self::MOVES_EARLIER,
+        );
     }
 
     /**
@@ -361,11 +412,14 @@ class BookingChangeService
      * docs/seq_perubahan_booking.mermaid).
      *
      * Pass whichever of checkIn, checkOut, room or guestCount applies;
-     * the rest keep their current values. The rules are evaluated exactly
-     * as they will be at save time, so a preview that reports a conflict
-     * is a change that would be refused.
+     * the rest keep their current values. Exactly one of those three
+     * kinds must be given - handing over more than one is refused rather
+     * than silently answered for just one of them. The rules are
+     * evaluated exactly as they will be at save time, so a preview that
+     * reports a conflict is a change that would be refused.
      *
      * @throws BookingException when the role or the status refuses the change
+     *                          or when the call asks for several changes at once
      * @throws AvailabilityException when a night of the change is taken
      */
     public function preview(
@@ -378,11 +432,24 @@ class BookingChangeService
     ): BookingChangeResult {
         $this->assertMayChange($actor);
 
+        // One preview answers one question. Handing it dates *and* a
+        // room would let the match below pick one and quietly drop the
+        // other, so the desk would be shown a figure for a change
+        // nobody asked for (review finding N5).
+        $requested = array_values(array_filter([
+            ($checkIn !== null || $checkOut !== null) ? self::DATES_CHANGED : null,
+            $room !== null ? self::ROOM_CHANGED : null,
+            $guestCount !== null ? self::GUEST_COUNT_CHANGED : null,
+        ]));
+
         $changeType = match (true) {
-            $checkIn !== null || $checkOut !== null => self::DATES_CHANGED,
-            $room !== null => self::ROOM_CHANGED,
-            $guestCount !== null => self::GUEST_COUNT_CHANGED,
-            default => throw new BookingException('A preview needs something to change: dates, a room or the guest count.'),
+            $requested === [] => throw new BookingException(
+                'A preview needs something to change: dates, a room or the guest count.',
+            ),
+            count($requested) > 1 => throw new BookingException(
+                'A preview takes one change at a time: dates, a room or the guest count; preview the others separately.',
+            ),
+            default => $requested[0],
         };
 
         return DB::transaction(function () use (
@@ -506,6 +573,13 @@ class BookingChangeService
      * of the new check-in night are re-read from the rate in force at
      * the same time (BR-11.8).
      *
+     * BR-01.4 (no past check-in) only governs *choosing* check_in_date,
+     * so it runs just when the change actually moves that date. A stay
+     * in progress has a check-in in the past by definition and BR-06
+     * still lets the owner, the manager and the receptionist extend,
+     * shorten or move it - applying the gate unconditionally blocked the
+     * main use of US-16 (review finding N1).
+     *
      * @param  array<int, Room>  $rooms
      *
      * @throws AvailabilityException when a night of the new stay is taken
@@ -520,6 +594,11 @@ class BookingChangeService
         User $actor,
         string $reason,
     ): void {
+        // The booking is re-read under its row lock and is only written
+        // after this returns, so check_in_date here is still the stored
+        // one - the right value to compare against.
+        $checkInMoved = $from->toDateString() !== $booking->check_in_date->toDateString();
+
         $this->availability->assertValidStay(
             $booking->property,
             $from,
@@ -529,6 +608,7 @@ class BookingChangeService
             $actor,
             $reason,
             $booking->id,
+            enforcePastCheckInRule: $checkInMoved,
         );
 
         $nights = (int) $from->diffInDays($to, false);
@@ -645,6 +725,9 @@ class BookingChangeService
      * The one row this change leaves in booking_change_logs (CH-06): the
      * type, the value before, the value after, the reason and the person
      * who did it.
+     *
+     * @param  array<string, mixed>  $oldValue
+     * @param  array<string, mixed>  $newValue
      */
     private function writeLog(
         Booking $booking,
@@ -763,20 +846,60 @@ class BookingChangeService
     }
 
     /**
+     * extend() and shorten() promise a direction, and that promise must
+     * hold against the booking as it sits behind the row lock. Doing it
+     * here rather than in the public wrappers is what makes two staff
+     * working on the same booking safe: the second one is measured
+     * against the first one's committed dates and told plainly that
+     * there is nothing to extend, instead of silently reverting the
+     * other's change (review finding N2).
+     *
+     * @throws BookingException
+     */
+    private function assertCheckOutMoves(Booking $booking, CarbonImmutable $to, string $direction): void
+    {
+        $current = $this->toDay($booking->check_out_date);
+
+        if ($direction === self::MOVES_LATER) {
+            if ($to <= $current) {
+                throw new BookingException(
+                    'An extension must move the check-out date later; use shorten() to move it earlier.',
+                );
+            }
+
+            return;
+        }
+
+        if ($to >= $current) {
+            throw new BookingException(
+                'A shortening must move the check-out date earlier; use extend() to move it later.',
+            );
+        }
+
+        if ($to <= $this->toDay($booking->check_in_date)) {
+            throw new BookingException('A booking must keep at least one night (BR-01.2).');
+        }
+    }
+
+    /**
      * AGENTS.md rule 3 and 8: the allow-list is written against the
      * canonical RoleName values, so a role that is not one of the three
      * is refused instead of being missed by a deny-list.
      *
      * @throws BookingException
      */
-    private function assertMayChange(?User $actor): void
+    private function assertMayChange(User $actor): void
     {
-        $role = $actor === null ? null : RoleName::tryFrom((string) $actor->role?->name);
+        // users.role_id is NOT NULL with a foreign key to roles, so a
+        // persisted user always resolves a role; there is no null to
+        // guard against here.
+        $roleName = $actor->role->name;
+        $role = RoleName::tryFrom($roleName);
 
         if ($role === null || ! in_array($role, self::CHANGE_ROLES, true)) {
             throw new BookingException(sprintf(
                 'Role "%s" may not change a booking (BR-06 allows the owner, the manager and the receptionist).',
-                $actor?->role?->name ?? 'nobody',
+                $roleName,
             ));
         }
     }
@@ -787,9 +910,9 @@ class BookingChangeService
      *
      * @throws BookingException
      */
-    private function assertReasonGiven(?string $reason): void
+    private function assertReasonGiven(string $reason): void
     {
-        if (trim((string) $reason) === '') {
+        if (trim($reason) === '') {
             throw new BookingException('A reason is required for every booking change (K4, BR-06).');
         }
     }
@@ -822,8 +945,14 @@ class BookingChangeService
      * practically unreachable, but a refusal that does slip through must
      * still read as an availability problem instead of a driver error,
      * exactly as it does in BookingService.
+     *
+     * Returns an Exception rather than a QueryException because the
+     * translated branch hands back an AvailabilityException, which only
+     * shares Exception with the driver's own error - declaring
+     * QueryException here would raise a TypeError at the very moment
+     * this safety net is needed.
      */
-    private function translateDuplicateNight(QueryException $e): QueryException
+    private function translateDuplicateNight(QueryException $e): Exception
     {
         $sqlState = $e->errorInfo[0] ?? null;
         $message = (string) ($e->errorInfo[2] ?? $e->getMessage());

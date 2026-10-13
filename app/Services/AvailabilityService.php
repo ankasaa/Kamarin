@@ -88,6 +88,13 @@ class AvailabilityService
      * capacity sufficient, and
      * every night free of active bookings and blocks.
      *
+     * BR-01.4 governs choosing a check-in date, so callers that re-check
+     * a stay whose check-in has already been honoured - a booking being
+     * edited rather than created - pass false for $enforcePastCheckInRule
+     * whenever the change leaves check_in_date where it is (BR-06).
+     * Moving the check-in itself keeps the gate on, because that is the
+     * moment BR-01.4 applies.
+     *
      * @param  iterable<int, Room>  $rooms
      *
      * @throws AvailabilityException
@@ -101,10 +108,13 @@ class AvailabilityService
         ?User $user = null,
         ?string $reason = null,
         ?int $excludeBookingId = null,
+        bool $enforcePastCheckInRule = true,
     ): void {
         [$from, $to] = $this->stayNights($checkIn, $checkOut);
 
-        $this->assertCheckInIsNotInPast($from, $user, $reason);
+        if ($enforcePastCheckInRule) {
+            $this->assertCheckInIsNotInPast($from, $user, $reason);
+        }
 
         // Deduplicate by primary key: the same room passed twice must
         // not double its capacity (BR-01.2 counts the capacity of the

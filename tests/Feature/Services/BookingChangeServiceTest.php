@@ -8,6 +8,7 @@ use App\Exceptions\AvailabilityException;
 use App\Exceptions\BookingException;
 use App\Exceptions\PricingException;
 use App\Models\Booking;
+use App\Models\BookingItem;
 use App\Models\BookingNight;
 use App\Models\BookingSource;
 use App\Models\Property;
@@ -127,6 +128,36 @@ function chInactiveNights(Booking $booking): array
         ->map(fn (BookingNight $night) => $night->stay_date->toDateString())
         ->values()
         ->all();
+}
+
+/**
+ * Give an existing booking a second room, the way a two-room booking
+ * looks in the database: one more item plus that room's nights, with
+ * the total following them (BR-12.2). BookingFactory only ever builds
+ * a single-room booking.
+ */
+function chAddSecondRoom(Booking $booking, Room $room, int $pricePerNight = 300000): void
+{
+    $nightCount = (int) $booking->check_in_date->diffInDays($booking->check_out_date);
+    $isActive = $booking->status->holdsNights();
+
+    $item = BookingItem::factory()->create([
+        'booking_id' => $booking->id,
+        'room_id' => $room->id,
+        'subtotal' => $nightCount * $pricePerNight,
+    ]);
+
+    for ($i = 0; $i < $nightCount; $i++) {
+        BookingNight::factory()->create([
+            'booking_item_id' => $item->id,
+            'room_id' => $room->id,
+            'stay_date' => $booking->check_in_date->copy()->addDays($i),
+            'price' => $pricePerNight,
+            'is_active' => $isActive,
+        ]);
+    }
+
+    $booking->update(['total_amount' => (int) $booking->total_amount + $item->subtotal]);
 }
 
 // CH-01: extending by one night keeps every existing night at its old
@@ -251,8 +282,8 @@ it('CH-04: moves a stay to other dates without treating its own nights as a conf
         ->and($result->log)->not->toBeNull();
 });
 
-// CH-04 / K4: the same shift, but onto a night another booking holds,
-// must still be refused.
+// CH-04 / BR-01.1: the same shift, but onto a night another booking
+// holds, must still be refused.
 it('CH-04: still refuses dates that another booking holds', function () {
     freezeNow('2026-06-15 10:00:00');
 
@@ -443,34 +474,313 @@ it('CH-08: refuses to move a booking into a room of a different type', function 
 
 // CH-09 / BR-06: a checked-in guest may be extended or sent home early,
 // but the check-in date itself is frozen once the stay has started.
+//
+// The fixture is deliberately realistic: the guest checked in YESTERDAY
+// and is still staying, so check_in_date is already in the past. That
+// state is the normal one for a stay in progress, and it is exactly
+// what BR-06 lets a receptionist act on - a fixture with a check-in in
+// the future could never occur in production and hid BR-01.4 leaking
+// into the change path (review finding N1).
 it('CH-09: a checked-in booking refuses a check-in change but accepts an extension', function () {
     freezeNow('2026-06-15 10:00:00');
 
     $setup = chSetup();
-    $booking = chBooking($setup['room'], 'checkedIn');
+    $booking = chBooking($setup['room'], 'checkedIn', [
+        'check_in_date' => '2026-06-14',
+        'check_out_date' => '2026-06-16',
+    ]);
     $receptionist = chUser('receptionist');
 
     expect(fn () => changes()->changeDates(
         $booking,
-        '2026-07-11',
-        '2026-07-13',
+        '2026-06-15',
+        '2026-06-17',
         $receptionist,
         'Guest arrived a day late',
     ))->toThrow(BookingException::class);
 
-    expect($booking->refresh()->check_in_date->toDateString())->toBe('2026-07-10')
-        ->and($booking->check_out_date->toDateString())->toBe('2026-07-12')
+    expect($booking->refresh()->check_in_date->toDateString())->toBe('2026-06-14')
+        ->and($booking->check_out_date->toDateString())->toBe('2026-06-16')
         ->and($booking->bookingChangeLogs()->count())->toBe(0);
+
+    changes()->extend($booking, '2026-06-18', $receptionist, 'Guest stays two nights longer');
+
+    expect(chActiveNights($booking))->toBe([
+        '2026-06-14' => 300000,
+        '2026-06-15' => 300000,
+        '2026-06-16' => 300000,
+        '2026-06-17' => 300000,
+    ])
+        ->and($booking->refresh()->total_amount)->toBe(1200000);
+});
+
+// BR-01.4 governs choosing a check-in date, not re-validating one that
+// has already been honoured. Shortening a stay in progress keeps the
+// check-in where it is, so a receptionist must be able to do it even
+// though that date is now in the past (review finding N1).
+it('CH-03: a receptionist shortens a stay that is already in progress', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $setup = chSetup();
+    $booking = chBooking($setup['room'], 'checkedIn', [
+        'check_in_date' => '2026-06-14',
+        'check_out_date' => '2026-06-18',
+    ]);
+    $receptionist = chUser('receptionist');
+
+    changes()->shorten($booking, '2026-06-16', $receptionist, 'Guest leaves tomorrow');
+
+    expect(chActiveNights($booking))->toBe([
+        '2026-06-14' => 300000,
+        '2026-06-15' => 300000,
+    ])
+        ->and(chInactiveNights($booking))->toBe(['2026-06-16', '2026-06-17'])
+        ->and($booking->refresh()->check_out_date->toDateString())->toBe('2026-06-16')
+        ->and($booking->total_amount)->toBe(600000);
+});
+
+// Moving the room of a stay in progress does not touch the check-in
+// either, so BR-01.4 has nothing to say about it (review finding N1).
+it('CH-08: a receptionist moves a stay that is already in progress to another room', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $setup = chSetup();
+    $target = chRoom($setup['roomType']);
+    $booking = chBooking($setup['room'], 'checkedIn', [
+        'check_in_date' => '2026-06-14',
+        'check_out_date' => '2026-06-16',
+    ]);
+    $receptionist = chUser('receptionist');
+
+    changes()->moveRoom($booking, $target, $receptionist, 'Room 101 is out of order');
+
+    expect($booking->refresh()->bookingItems()->pluck('room_id')->all())->toBe([$target->id])
+        ->and($booking->check_in_date->toDateString())->toBe('2026-06-14')
+        ->and($booking->check_out_date->toDateString())->toBe('2026-06-16')
+        ->and($booking->bookingChangeLogs()->count())->toBe(1);
+});
+
+// The preview of a stay in progress has to reach the same verdict as
+// the save would, otherwise the desk is shown a refusal it will then
+// hit again on save (review finding N1).
+it('CH-06: a receptionist previews a change to a stay that is already in progress', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $setup = chSetup();
+    $booking = chBooking($setup['room'], 'checkedIn', [
+        'check_in_date' => '2026-06-14',
+        'check_out_date' => '2026-06-16',
+    ]);
+    $receptionist = chUser('receptionist');
+
+    $result = changes()->preview($booking, $receptionist, checkOut: '2026-06-19');
+
+    expect($result->oldTotal)->toBe(600000)
+        ->and($result->newTotal)->toBe(1500000) // 14-18 Juni = 5 malam
+        ->and($result->log)->toBeNull()
+        ->and($booking->refresh()->check_out_date->toDateString())->toBe('2026-06-16')
+        ->and($booking->bookingChangeLogs()->count())->toBe(0);
+});
+
+// BR-01.4 itself: the gate is skipped only while the check-in stays
+// where it is. A change that actually pushes check_in_date into the
+// past still needs the owner or the manager, with a reason. This test
+// guards the fix above from being taken too far.
+it('BR-01.4: pushing the check-in date into the past still needs the owner or the manager', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $setup = chSetup();
+    $booking = chBooking($setup['room'], 'confirmed', [
+        'check_in_date' => '2026-06-15',
+        'check_out_date' => '2026-06-17',
+    ]);
+    $receptionist = chUser('receptionist');
+    $owner = chUser('owner');
+
+    expect(fn () => changes()->changeDates(
+        $booking,
+        '2026-06-10',
+        '2026-06-12',
+        $receptionist,
+        'Correcting a mis-typed date',
+    ))->toThrow(AvailabilityException::class);
+
+    expect($booking->refresh()->check_in_date->toDateString())->toBe('2026-06-15')
+        ->and($booking->bookingChangeLogs()->count())->toBe(0);
+
+    changes()->changeDates($booking, '2026-06-10', '2026-06-12', $owner, 'Correcting a mis-typed date');
+
+    expect($booking->refresh()->check_in_date->toDateString())->toBe('2026-06-10')
+        ->and($booking->check_out_date->toDateString())->toBe('2026-06-12')
+        ->and($booking->bookingChangeLogs()->count())->toBe(1);
+});
+
+// Two staff on the same booking. extend() measures its direction
+// against the row as it sits behind the lock, never against the model
+// the caller happens to hold: staff B's copy still says check-out 12
+// July after staff A moved it to 15 July, so B's "extend to 14 July" is
+// a shortening in reality and must be refused instead of silently
+// reverting A's change (review finding N2).
+it('BR-06: extend refuses a change that only makes sense against a stale booking', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $setup = chSetup();
+    $booking = chBooking($setup['room'], 'confirmed');
+    $receptionist = chUser('receptionist');
+
+    // A second model of the same row, read before the colleague's
+    // change - exactly what a second browser tab holds.
+    $stale = Booking::query()->findOrFail($booking->id);
+
+    changes()->extend($booking, '2026-07-15', $receptionist, 'Guest stays three nights longer');
+
+    expect($stale->check_out_date->toDateString())->toBe('2026-07-12');
+
+    expect(fn () => changes()->extend($stale, '2026-07-14', $receptionist, 'Guest stays one night longer'))
+        ->toThrow(BookingException::class);
+
+    // The refusal left the colleague's work exactly where it was.
+    expect($booking->refresh()->check_in_date->toDateString())->toBe('2026-07-10')
+        ->and($booking->check_out_date->toDateString())->toBe('2026-07-15')
+        ->and($booking->bookingChangeLogs()->count())->toBe(1);
+});
+
+// BR-12 names two figures that must move together: total_amount and
+// booking_items.subtotal. A service that only fixed the booking total
+// would leave the item disagreeing with the nights it holds.
+it('BR-12: recalculates booking_items.subtotal together with total_amount', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $setup = chSetup();
+    $booking = chBooking($setup['room']);
+    $receptionist = chUser('receptionist');
+
+    $subtotal = fn (): int => (int) $booking->refresh()->bookingItems()->first()->subtotal;
+
+    expect($subtotal())->toBe(600000); // 10 and 11 July
 
     changes()->extend($booking, '2026-07-14', $receptionist, 'Guest stays two nights longer');
 
-    expect(chActiveNights($booking))->toBe([
-        '2026-07-10' => 300000,
-        '2026-07-11' => 300000,
-        '2026-07-12' => 300000,
-        '2026-07-13' => 300000,
-    ])
+    expect($subtotal())->toBe(1200000)
         ->and($booking->refresh()->total_amount)->toBe(1200000);
+
+    changes()->shorten($booking, '2026-07-11', $receptionist, 'Guest leaves one night earlier');
+
+    expect($subtotal())->toBe(300000)
+        ->and($booking->refresh()->total_amount)->toBe(300000);
+});
+
+// BR-01.1: the destination room may be booked inside the stay window
+// for part of the range. Only those nights are a conflict, and a
+// refusal has to leave the booking where it was.
+it('CH-08: refuses a move into a room another booking holds for part of the stay', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $setup = chSetup();
+    $target = chRoom($setup['roomType']);
+    $booking = chBooking($setup['room'], 'confirmed'); // 10-12 July
+    $owner = chUser('owner');
+
+    // The target is taken on 11 July only: a partial overlap.
+    chBooking($target, 'confirmed', [
+        'check_in_date' => '2026-07-11',
+        'check_out_date' => '2026-07-12',
+    ]);
+
+    expect(fn () => changes()->moveRoom($booking, $target, $owner, 'Room 101 is out of order'))
+        ->toThrow(AvailabilityException::class);
+
+    expect($booking->refresh()->bookingItems()->pluck('room_id')->all())->toBe([$setup['room']->id])
+        ->and($booking->bookingChangeLogs()->count())->toBe(0)
+        ->and(chActiveNights($booking))->toBe([
+            '2026-07-10' => 300000,
+            '2026-07-11' => 300000,
+        ]);
+});
+
+// A booking that holds two rooms has to have both of them moved, both
+// item subtotals recomputed and the total follow - not just the first
+// item a query happened to return.
+it('CH-04: moves every room of a multi-room booking to the new dates', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $setup = chSetup();
+    $second = chRoom($setup['roomType']);
+    $booking = chBooking($setup['room'], 'confirmed');
+    chAddSecondRoom($booking, $second);
+
+    $receptionist = chUser('receptionist');
+
+    expect($booking->refresh()->bookingItems()->count())->toBe(2)
+        ->and($booking->total_amount)->toBe(1200000); // 2 nights x 2 rooms
+
+    changes()->changeDates($booking, '2026-07-12', '2026-07-14', $receptionist, 'Both guests shift by two nights');
+
+    $booking->refresh();
+    $nights = $booking->bookingNights()->get();
+
+    $active = $nights->filter(fn (BookingNight $night) => $night->is_active);
+
+    expect($nights->count())->toBe(8) // 4 stay dates x 2 rooms
+        ->and($active->count())->toBe(4)
+        ->and($active->sum('price'))->toBe(1200000)
+        ->and($active->map(fn (BookingNight $night) => $night->stay_date->toDateString())
+            ->unique()->sort()->values()->all())
+        ->toBe(['2026-07-12', '2026-07-13'])
+        ->and($nights->reject(fn (BookingNight $night) => $night->is_active)
+            ->map(fn (BookingNight $night) => $night->stay_date->toDateString())
+            ->unique()->sort()->values()->all())
+        ->toBe(['2026-07-10', '2026-07-11'])
+        ->and($booking->bookingItems()->pluck('subtotal')->map(fn ($v) => (int) $v)->sort()->values()->all())
+        ->toBe([600000, 600000])
+        ->and($booking->total_amount)->toBe(1200000);
+});
+
+// A preview is read-only in every sense: not one row is written and
+// not even the model the caller passed in is touched, so a caller that
+// goes on to save it cannot persist a hypothetical total.
+it('T-013: a preview leaves the booking model it was handed untouched', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $setup = chSetup();
+    $booking = chBooking($setup['room']);
+    $receptionist = chUser('receptionist');
+
+    $result = changes()->preview($booking, $receptionist, checkOut: '2026-07-14');
+
+    expect($result->newTotal)->toBe(1200000)
+        ->and($booking->total_amount)->toBe(600000)
+        ->and($booking->isDirty('total_amount'))->toBeFalse()
+        ->and($booking->refresh()->total_amount)->toBe(600000)
+        ->and($booking->bookingChangeLogs()->count())->toBe(0);
+});
+
+// Handing a preview two different changes would let the match() below
+// pick one and silently drop the other, so the desk would be shown a
+// figure for a change nobody asked for.
+it('T-013: a preview refuses to be handed more than one kind of change', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $setup = chSetup();
+    $target = chRoom($setup['roomType']);
+    $booking = chBooking($setup['room']);
+    $receptionist = chUser('receptionist');
+
+    expect(fn () => changes()->preview(
+        $booking,
+        $receptionist,
+        checkOut: '2026-07-14',
+        room: $target,
+    ))->toThrow(BookingException::class);
+
+    expect(fn () => changes()->preview(
+        $booking,
+        $receptionist,
+        room: $target,
+        guestCount: 3,
+    ))->toThrow(BookingException::class);
+
+    expect($booking->refresh()->bookingChangeLogs()->count())->toBe(0);
 });
 
 // CH-10 / BR-12.3: shortening a booking that has already been paid in
