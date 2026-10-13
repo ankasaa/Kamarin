@@ -64,7 +64,7 @@ Jika kode, permintaan user, dan dokumen saling bertentangan: **berhenti dan tany
 ## Peran agent
 
 - **Builder:** mengimplementasikan satu tugas sampai Definition of Done.
-- **Reviewer:** membaca diff terhadap dokumen sumber, menjalankan tes, dan melaporkan ketidaksesuaian (nama kolom, aturan, kasus uji yang terlewat). Tidak mengedit kode kecuali diminta. Agent yang menulis kode tidak me-review kodenya sendiri. Setiap rekomendasi perubahan yang menyangkut versi, konfigurasi infrastruktur, atau keamanan harus disertai sumber dokumentasi resmi, bukan dari ingatan. Tandai juga paparan jaringan, misalnya port yang terbuka ke luar komputer.
+- **Reviewer:** membaca diff terhadap dokumen sumber, menjalankan tes, dan melaporkan ketidaksesuaian (nama kolom, aturan, kasus uji yang terlewat). Tidak mengedit kode kecuali diminta. Agent yang menulis kode tidak me-review kodenya sendiri. Setiap rekomendasi perubahan yang menyangkut versi, konfigurasi infrastruktur, atau keamanan harus disertai sumber dokumentasi resmi, bukan dari ingatan. Tandai juga paparan jaringan, misalnya port yang terbuka ke luar komputer. Uji pula apakah tafsir sebuah aturan masuk akal pada skenario operasional nyata (tamu terlambat, perubahan mendadak, dua staf bersamaan), bukan hanya apakah kode konsisten dengan tafsir Builder.
 
 ## Definition of Done
 

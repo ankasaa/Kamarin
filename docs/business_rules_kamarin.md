@@ -1,6 +1,8 @@
-# Business Rules Kamarin (Draf v1.2)
+# Business Rules Kamarin (Draf v1.3)
 
 Diperbarui: 8 Oktober 2026
+
+**Perubahan v1.3:** (1) batas waktu no-show hanya membuka kemungkinan mencatat no-show, tidak melarang check-in tamu yang datang terlambat selama booking masih confirmed (BR-08 butir 3, baris matriks confirmed ke checked_in, kasus uji ST-10). (2) Pengembalian dana dimodelkan hanya sebagai baris pembayaran baru bertipe `refund` berstatus verified. Baris pembayaran asli tetap verified dan status `refunded` tidak dipakai di MVP, supaya rumus terbayar tidak mengurangi dua kali (BR-04 butir 3, BR-05 butir 3).
 
 **Perubahan v1.2:** kamar bertipe nonaktif (`room_types.is_active = false`) tidak tersedia untuk dijual (BR-01 butir 1 dan BR-07 butir 6, kasus uji AV-14). Pencocokan tamu memakai email yang dinormalisasi (BR Data dan privasi). ERD tidak berubah.
 
@@ -115,7 +117,7 @@ Aturan bernomor BR-01 sampai BR-10 mengikuti draf dari catatan wawancara. BR-11 
 
 1. Sisa tagihan dibayar saat check-in (default).
 2. Saat check-in dan check-out, jika sisa tagihan masih ada, sistem menampilkan peringatan tetapi tidak memblokir.
-3. Pembayaran dicatat manual oleh staf: jumlah, tipe, metode, nama pembayar (`payer_name`, bisa berbeda dari nama tamu), tanggal, referensi, dan bukti opsional. Alur status pembayaran: pending → verified atau failed; refunded untuk yang dikembalikan.
+3. Pembayaran dicatat manual oleh staf: jumlah, tipe, metode, nama pembayar (`payer_name`, bisa berbeda dari nama tamu), tanggal, referensi, dan bukti opsional. Alur status pembayaran: pending → verified atau failed. Pengembalian dana dicatat sebagai baris baru bertipe `refund` (berstatus verified saat dicatat), sedangkan baris pembayaran aslinya tetap verified. Status `refunded` tidak dipakai di MVP agar rumus terbayar (BR-12) tidak mengurangi dua kali.
 
 ### BR-13 Kedaluwarsa booking pending 🟦
 
@@ -144,7 +146,7 @@ Peran: **O** = Owner, **M** = Manager, **R** = Resepsionis. Housekeeping tidak m
 | pending → expired | Sistem | Waktu ≥ expires_at | Malam dinonaktifkan |
 | pending → cancelled | O, M, R (R wajib alasan) | Alasan wajib | Malam dinonaktifkan, `cancelled_at` dan `cancellation_reason` terisi |
 | confirmed → cancelled | O, M, R (R wajib alasan) | Alasan wajib. Sistem menampilkan saran DP (BR-05) | Malam dinonaktifkan. Refund dicatat jika DP dikembalikan |
-| confirmed → checked_in | O, M, R | Tanggal check-in = hari ini atau sudah lewat, belum no_show. Peringatan housekeeping | `checked_in_at` terisi |
+| confirmed → checked_in | O, M, R | Tanggal check-in hari ini atau sudah lewat, dan status masih confirmed. Setelah `no_show_cutoff_time` tetap boleh (tamu terlambat), sistem hanya memberi peringatan. Peringatan housekeeping | `checked_in_at` terisi |
 | confirmed → no_show | O, M, R | Sekarang ≥ tanggal check-in pukul `no_show_cutoff_time` (K7) | Semua malam dinonaktifkan. Default DP hangus |
 | checked_in → checked_out | O, M, R | Peringatan jika sisa tagihan > 0 | `checked_out_at` terisi, kamar menjadi `dirty` |
 | checked_in → cancelled | Tidak diizinkan | Gunakan perubahan booking untuk mempercepat check-out | |
@@ -166,6 +168,7 @@ Keterangan:
 
 1. No-show hanya untuk booking `confirmed`, dan hanya setelah batas waktu (default pukul 22:00 pada tanggal check-in).
 2. Dicatat manual oleh staf. Efeknya: status `no_show`, semua malam booking dinonaktifkan sehingga kamar bisa dijual kembali, DP default hangus.
+3. Batas waktu itu hanya membuka kemungkinan mencatat no-show. Ia tidak melarang check-in tamu yang datang terlambat selama booking masih `confirmed` dan belum ditandai no-show. Setelah batas, check-in tetap berhasil dengan peringatan.
 
 ---
 

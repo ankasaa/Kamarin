@@ -103,6 +103,7 @@ Catatan penting:
 | ST-07 | Setiap transisi | Menulis `booking_status_logs` | Matriks status |
 | ST-08 | Check-out | `housekeeping_statuses` kamar menjadi dirty | BR-07 |
 | ST-09 | Check-in saat kamar belum ready atau sisa tagihan lebih dari nol | Peringatan, tidak memblokir | BR-04, BR-07 |
+| ST-10 | Check-in booking confirmed setelah `no_show_cutoff_time` pada tanggal check-in | Berhasil dengan peringatan, tidak ditolak | BR-08 butir 3 |
 
 ### 4.5 Perubahan booking (CH)
 
@@ -130,6 +131,8 @@ Catatan penting:
 | PY-04 | Refund verified | Mengurangi terbayar | BR-12 |
 | PY-05 | `payer_name` berbeda dari nama tamu | Diterima | BR-04 |
 | PY-06 | Pembatalan tepat pada batas `free_cancel_days`, dan sehari lebih dekat | Pada batas: saran DP dikembalikan. Lebih dekat: saran DP hangus | BR-05 |
+| PY-07 | Pembatalan dengan keputusan DP dikembalikan | Dibuat satu baris refund verified senilai DP bersih. Baris DP asli tetap verified. Terbayar menjadi nol | BR-04 butir 3, BR-05 butir 3 |
+| PY-08 | Resepsionis membatalkan dengan keputusan DP berbeda dari saran, lalu Owner atau Manager | Resepsionis ditolak, Owner dan Manager diizinkan | BR-05, Keterangan 2 matriks status |
 
 ### 4.7 Kedaluwarsa (EX)
 
