@@ -143,8 +143,15 @@ class PaymentService
      * the rule defines an explicit flow pending -> verified or failed:
      * recording is not the same act as confirming the money arrived.
      *
-     * @throws PaymentException when the role may not handle payments or
-     *                          the amount cannot exist
+     * One payment type is reserved: a refund is money leaving the till,
+     * so writing one by hand belongs to the owner and the manager. That
+     * closes Pertanyaan Terbuka 4 of docs/STATUS.md - without it one
+     * receptionist could hand money back for any amount, with no reason
+     * and no log. See assertMayRecordType().
+     *
+     * @throws PaymentException when the role may not handle payments, the
+     *                          amount cannot exist, or the role may not
+     *                          write this payment type
      */
     public function record(
         Booking $booking,
@@ -157,6 +164,7 @@ class PaymentService
         ?string $referenceNumber = null,
     ): Payment {
         $this->assertMayHandlePayments($actor);
+        $this->assertMayRecordType($actor, $type);
 
         if ($amount <= 0) {
             throw new PaymentException('A payment amount must be a positive number of rupiah.');
@@ -334,5 +342,35 @@ class PaymentService
         $role = $actor === null ? null : RoleName::tryFrom((string) $actor->role?->name);
 
         return $role === RoleName::Owner || $role === RoleName::Manager;
+    }
+
+    /**
+     * Pertanyaan Terbuka 4 (decision M4): a refund recorded by hand is
+     * money leaving the till, so it belongs to the owner and the
+     * manager. The receptionist still records every kind of money coming
+     * in - the everyday work of the front desk - and returns a deposit
+     * through cancel(), where the BR-05.2 advice and its deviation gate
+     * already keep that decision honest (PY-07, PY-08).
+     *
+     * Without this, one receptionist could write a refund of any size
+     * with no reason, no advice and no status log, and the only trace
+     * would be the payment row itself.
+     *
+     * The refund that settleCancellation() writes during a cancellation
+     * does not pass through here: it is created verified, inside the
+     * cancellation transaction, by recordRefund().
+     *
+     * @throws PaymentException when a receptionist tries to refund by hand
+     */
+    private function assertMayRecordType(User $actor, PaymentType $type): void
+    {
+        if ($type !== PaymentType::Refund || $this->mayDeviateFromAdvice($actor)) {
+            return;
+        }
+
+        throw new PaymentException(sprintf(
+            'Role "%s" may record deposits and settlements, but only the owner or the manager may record a refund (BR-04.3).',
+            $actor->role?->name ?? 'nobody',
+        ));
     }
 }

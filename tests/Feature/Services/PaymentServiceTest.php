@@ -575,3 +575,80 @@ it('BR-12.3: flags an overpayment instead of clamping it', function () {
         ->and($summary->status)->toBe(PaymentBalanceStatus::Paid)
         ->and($summary->overpaid)->toBeTrue();
 });
+
+// BR-04.3, decision M4 on Pertanyaan Terbuka no. 4: recording a refund by
+// hand is the one payment type that moves money out of the till, so it
+// belongs to the owner and the manager. A receptionist keeps the everyday
+// work - deposits and settlements - and gets refunds through the
+// cancellation flow instead, where the advice and the deviation gate of
+// BR-05.2 already apply (PY-07, PY-08). Without this, one receptionist
+// could hand money back for any amount with no reason and no log, which
+// is exactly the gap the review of T-012 opened.
+it('BR-04.3: reserves a manual refund for the owner and the manager', function () {
+    freezeNow('2026-06-15 10:00:00');
+
+    $roomType = pyRoomType();
+    $actors = pyActors();
+    $booking = pyBooking($roomType); // total 600000
+    $receptionist = $actors[RoleName::Receptionist->value];
+
+    // A receptionist still records the money that comes in, and the
+    // everyday two-step is unchanged: record it, then verify it.
+    $deposit = payments()->record($booking, $receptionist, 300000, PaymentType::Deposit, PaymentMethod::Cash, '2026-06-15');
+
+    expect($deposit->status)->toBe(PaymentStatus::Pending);
+
+    payments()->verify($deposit, $receptionist);
+    payments()->verify(
+        payments()->record($booking, $receptionist, 100000, PaymentType::Settlement, PaymentMethod::Cash, '2026-06-15'),
+        $receptionist,
+    );
+
+    expect(payments()->verifiedDeposit($booking))->toBe(400000)
+        ->and(payments()->netPaid($booking))->toBe(400000);
+
+    // The same receptionist is refused a refund, and the refusal writes
+    // no row at all.
+    expect(fn () => payments()->record(
+        $booking,
+        $receptionist,
+        100000,
+        PaymentType::Refund,
+        PaymentMethod::BankTransfer,
+        '2026-06-15',
+        null,
+        'TRF-2026-0615-R',
+    ))->toThrow(PaymentException::class, 'owner or the manager');
+
+    expect($booking->payments()->where('type', PaymentType::Refund->value)->count())->toBe(0)
+        ->and(payments()->netPaid($booking))->toBe(400000);
+
+    // Owner and manager may record one by hand. It lands in pending like
+    // any other hand-written payment: recording is not confirming, so it
+    // takes a verification before it reduces what was paid (PY-04).
+    $owner = $actors[RoleName::Owner->value];
+    $manager = $actors[RoleName::Manager->value];
+
+    $byOwner = payments()->record($booking, $owner, 100000, PaymentType::Refund, PaymentMethod::BankTransfer, '2026-06-15', null, 'TRF-2026-0615-owner');
+
+    expect($byOwner->type)->toBe(PaymentType::Refund)
+        ->and($byOwner->status)->toBe(PaymentStatus::Pending)
+        ->and($byOwner->recorded_by_user_id)->toBe($owner->id)
+        // Still pending: nothing has left the till yet.
+        ->and(payments()->netPaid($booking))->toBe(400000);
+
+    payments()->verify($byOwner, $owner);
+
+    $byManager = payments()->record($booking, $manager, 50000, PaymentType::Refund, PaymentMethod::BankTransfer, '2026-06-15', null, 'TRF-2026-0615-manager');
+    payments()->verify($byManager, $manager);
+
+    expect($byManager->recorded_by_user_id)->toBe($manager->id);
+
+    // 400000 came in, 150000 went back out, and the refused attempt by
+    // the receptionist left every figure exactly where it was.
+    expect($booking->payments()->count())->toBe(4)
+        ->and($booking->payments()->where('type', PaymentType::Refund->value)->count())->toBe(2)
+        ->and(payments()->verifiedDeposit($booking))->toBe(400000)
+        ->and(payments()->netPaid($booking))->toBe(250000)
+        ->and(payments()->balance($booking))->toBe(350000);
+});
