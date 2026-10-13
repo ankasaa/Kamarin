@@ -635,29 +635,36 @@ it('BR-04.3: reserves a manual refund for the owner and the manager', function (
     expect($booking->payments()->where('type', PaymentType::Refund->value)->count())->toBe(0)
         ->and(payments()->netPaid($booking))->toBe(400000);
 
-    // Owner and manager may record one by hand. It lands in pending like
-    // any other hand-written payment: recording is not confirming, so it
-    // takes a verification before it reduces what was paid (PY-04).
+    // Owner and manager may record one by hand. A refund is the one
+    // exception to the two-step: BR-04.3 bullet 3 and v1.3 change 2 say
+    // a refund is "verified when recorded", because it represents money
+    // that has already left the till - so no second click is waiting and
+    // terbayar drops at once.
     $owner = $actors[RoleName::Owner->value];
     $manager = $actors[RoleName::Manager->value];
 
     $byOwner = payments()->record($booking, $owner, 100000, PaymentType::Refund, PaymentMethod::BankTransfer, '2026-06-15', null, 'TRF-2026-0615-owner');
 
     expect($byOwner->type)->toBe(PaymentType::Refund)
-        ->and($byOwner->status)->toBe(PaymentStatus::Pending)
+        ->and($byOwner->status)->toBe(PaymentStatus::Verified)
         ->and($byOwner->recorded_by_user_id)->toBe($owner->id)
-        // Still pending: nothing has left the till yet.
-        ->and(payments()->netPaid($booking))->toBe(400000);
+        // Already out of the till: terbayar drops without a verify().
+        ->and(payments()->netPaid($booking))->toBe(300000);
 
-    payments()->verify($byOwner, $owner);
+    // There is nothing left to verify, which is exactly the point.
+    expect(fn () => payments()->verify($byOwner, $owner))
+        ->toThrow(PaymentException::class, 'Only a pending payment can be verified; this one is verified');
 
     $byManager = payments()->record($booking, $manager, 50000, PaymentType::Refund, PaymentMethod::BankTransfer, '2026-06-15', null, 'TRF-2026-0615-manager');
-    payments()->verify($byManager, $manager);
 
-    expect($byManager->recorded_by_user_id)->toBe($manager->id);
+    expect($byManager->status)->toBe(PaymentStatus::Verified)
+        ->and($byManager->recorded_by_user_id)->toBe($manager->id)
+        ->and(payments()->netPaid($booking))->toBe(250000);
 
     // 400000 came in, 150000 went back out, and the refused attempt by
-    // the receptionist left every figure exactly where it was.
+    // the receptionist left every figure exactly where it was. The
+    // deposit and settlement are still the only rows that needed a
+    // verify() before counting.
     expect($booking->payments()->count())->toBe(4)
         ->and($booking->payments()->where('type', PaymentType::Refund->value)->count())->toBe(2)
         ->and(payments()->verifiedDeposit($booking))->toBe(400000)

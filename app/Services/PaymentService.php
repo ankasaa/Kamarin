@@ -139,13 +139,22 @@ class PaymentService
 
     /**
      * BR-04.3: staff record a payment by hand - amount, type, method,
-     * payer name, date and reference. It is stored as pending, because
-     * the rule defines an explicit flow pending -> verified or failed:
-     * recording is not the same act as confirming the money arrived.
+     * payer name, date and reference. An incoming payment is stored as
+     * pending, because the rule defines an explicit flow pending ->
+     * verified or failed: recording is not the same act as confirming
+     * the money arrived.
      *
-     * One payment type is reserved: a refund is money leaving the till,
-     * so writing one by hand belongs to the owner and the manager. That
-     * closes Pertanyaan Terbuka 4 of docs/STATUS.md - without it one
+     * A refund is the one exception, and it is written verified straight
+     * away: BR-04.3 bullet 3 and change 2 of v1.3 both say a refund is
+     * "verified when recorded", because that row represents money which
+     * has already left the till. Leaving it pending would hide it from
+     * terbayar until somebody pressed verify, so the books would disagree
+     * with the wallet exactly when a refund has just been paid out. See
+     * recordStatus().
+     *
+     * One payment type is also reserved: a refund is money leaving the
+     * till, so writing one by hand belongs to the owner and the manager.
+     * That closes Pertanyaan Terbuka 4 of docs/STATUS.md - without it one
      * receptionist could hand money back for any amount, with no reason
      * and no log. See assertMayRecordType().
      *
@@ -185,7 +194,7 @@ class PaymentService
             'amount' => $amount,
             'type' => $type,
             'method' => $method,
-            'status' => PaymentStatus::Pending,
+            'status' => $this->recordStatus($type),
             'payer_name' => $payerName,
             'payment_date' => $paymentDate,
             'reference_number' => $referenceNumber,
@@ -410,5 +419,24 @@ class PaymentService
         }
 
         return $referenceNumber === '' ? null : $referenceNumber;
+    }
+
+    /**
+     * BR-04.3 bullet 3 and change 2 of v1.3: a refund row is verified
+     * the moment it is written, every other hand-written payment starts
+     * as pending.
+     *
+     * The refund is not waiting on anyone to confirm anything - the
+     * money has already gone back to the guest - so holding it in
+     * pending would keep it out of terbayar (BR-12) and leave the books
+     * claiming a debt that has been settled. Money coming in is the
+     * opposite case: recording it must not count as confirming it, or a
+     * bank transfer that never arrived would look paid.
+     */
+    private function recordStatus(PaymentType $type): PaymentStatus
+    {
+        return $type === PaymentType::Refund
+            ? PaymentStatus::Verified
+            : PaymentStatus::Pending;
     }
 }
