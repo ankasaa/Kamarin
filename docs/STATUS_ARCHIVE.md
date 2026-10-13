@@ -1,6 +1,6 @@
 # STATUS Kamarin - Arsip
 
-Entri tugas yang sudah selesai, dipindahkan dari `docs/STATUS.md` (batch pertama 2026-10-11; batch kedua 2026-10-12: entri T-005, T-005b, dan review mandiri T-005). File hidup `docs/STATUS.md` hanya memuat ringkasan satu baris per tugas selesai plus entri tugas terbaru.
+Entri tugas yang sudah selesai, dipindahkan dari `docs/STATUS.md` (batch pertama 2026-10-11; batch kedua 2026-10-12: entri T-005, T-005b, dan review mandiri T-005; batch ketiga 2026-10-13: entri T-011b dan T-012). File hidup `docs/STATUS.md` hanya memuat ringkasan satu baris per tugas selesai plus entri tugas terbaru.
 
 ---
 
@@ -91,6 +91,44 @@ Rekomendasi agent: **Pertanyaan 1 = A, Pertanyaan 2 = A, Pertanyaan 3 = biarkan 
 ---
 
 ## Log tugas (arsip)
+
+### T-011b Check-in lewat batas no-show + T-012 PaymentService (2026-10-13)
+
+- Cabang: `task/T-012-payment-service`, dibuat dari `main` **`2e6ceda`**. Di-merge ke `main` di commit `a374e6f`. Dua pekerjaan berurutan dikerjakan sebagai dua commit terpisah: `ba622ce` (T-011b) lalu `52ec096` (T-012), ditambah commit perbaikan review dan keputusan M4/M5/M6 (`2baac3e`, `c851091`, `b972fd6`).
+- Status: keduanya selesai. Review terpisah dijalankan tiga putaran: putaran 1 TIDAK LULUS (1 CRITICAL, diperbaiki), putaran 2 TIDAK LULUS (1 MAJOR M6, diperbaiki), **putaran 3 LULUS**. Sudah di-merge ke `main`.
+- Rujukan yang dibaca sebelum mulai: `AGENTS.md` versi terbaru (termasuk klausul Reviewer yang baru: menguji apakah tafsir aturan masuk akal pada skenario operasional nyata), `docs/business_rules_kamarin.md` **v1.3** - **BR-04 butir 3, BR-05 butir 1-3 + Keterangan 2 matriks, BR-08 butir 3, BR-12 butir 1-3, BR-03 butir 1/3, BR-04 butir 1-2, matriks baris `confirmed -> cancelled` dan `confirmed -> checked_in`**, baris **T-011b** dan **T-012** di `docs/tasks/BACKLOG_FASE4_5.md`, kasus uji **ST-10** dan **PY-01 sampai PY-08** di `docs/rencana_pengujian.md`, ERD `PAYMENTS` dan `PROPERTIES`.
+
+#### Commit 1 - T-011b (BR-08.3, ST-10)
+
+- Masalah: `assertCheckInWindow()` menolak check-in begitu `now() >= no_show_cutoff_time` dengan pesan "record the booking as a no-show instead". Business Rules v1.3 butir 3 menyatakan sebaliknya: batas itu **hanya membuka kemungkinan mencatat no-show**, tidak melarang check-in tamu yang datang terlambat selama booking masih `confirmed`.
+- Perubahan: `assertCheckInWindow()` kini hanya memeriksa `check_in_date <= today` (BR-02.2). Keterlambatan dipindahkan ke matriks sebagai peringatan: baris `confirmed -> checked_in` mendapat `'late_check_in'` pada `'warns'`, dijalankan `lateCheckinWarnings()` yang mengembalikan peringatan berisi `no_show_cutoff_time` bila `now() >= cutoff`, dan peringatan itu keluar lewat `BookingTransitionResult::warnings`. `markNoShow()` **tidak diubah** - tetap hanya boleh setelah batas (ST-05 tetap lulus tanpa disentuh).
+- Tes: cabang "(b) today's cutoff has passed" pada tes `BR-02.2/BR-08.1` dipecah menjadi tes terpisah **ST-10**, dan cabang (a) tetap `BR-02.2`. ST-10 menutup tiga sisi: tepat di batas 22:00, lewat batas 23:30, dan sebelum batas 21:00 (peringatan `no-show cutoff` **tidak** muncul), plus `checked_in_at` distempel dengan waktu sekarang.
+- Setelah perbaikan: `php vendor\bin\pest --filter "ST-10|ST-05|ST-09|BR-02"` → `{"result":"passed","tests":5,"passed":5,"assertions":25}` EXIT=0; seluruh suite **221/221 tes, 2015 assert**; `pint --parallel --test` → `{"result":"passed"}` `PINT_EXIT=0`. Commit `ba622ce`.
+
+#### Commit 2 - T-012 (BR-03, BR-04, BR-12, BR-05, PY-01..PY-08)
+
+- Baru: `app/Services/PaymentService.php`, `app/Enums/DpDecision.php`, `app/Enums/PaymentBalanceStatus.php`, `app/Exceptions/PaymentException.php`, `app/Support/PaymentSummary.php`, `tests/Feature/Services/PaymentServiceTest.php` (11 tes).
+- Diubah: `app/Services/BookingService.php` - `PaymentService` disuntikkan ke konstruktor; `verifiedDeposit()` dan `netPaid()` **dihapus** dari `BookingService` (keduanya kini hanya didefinisikan di `PaymentService`); `assertDepositCovered()` memakai `requiredDeposit()` + `verifiedDeposit()`, `balanceWarnings()` memakai `balance()`; `cancel()` mendapat parameter `?DpDecision $dpDecision = null`; kedua baris `-> cancelled` di `TRANSITIONS` mendapat `'dp_decision' => true`; `transition()` memanggil `settleCancellation()` **di dalam transaksi yang sama** setelah guard peran/syarat dan sebelum efek.
+- API `PaymentService`: `requiredDeposit()`, `verifiedDeposit()`, `netPaid()`, `balance()`, `paymentStatus()`, `summary()`, `record()`, `verify()`, `cancellationAdvice()`, `settleCancellation()`.
+- **Keputusan interpretasi (dijelaskan, bukan ditebak):**
+  1. **Pembulatan tanpa float, aritmetika integer.** `requiredDeposit()` menghitung `total * deposit_percent` sebagai bilangan bulat lalu `intdiv($product, 100)` dengan sisa `$product % 100`; bila `sisa * 2 >= 100` hasilnya ditambah satu (pembulatan setengah ke atas, sama dengan perilaku `round()` untuk bilangan positif). Tidak ada satu pun float di jalan uang, sesuai aturan 5 AGENTS. `333333 x 50% = 16666650` → `166666` + sisa `50` → **`166667`**.
+  2. **Hanya `verified` yang dihitung.** `netPaid()` = (`deposit` + `settlement` berstatus `verified`) **dikurangi** `refund` berstatus `verified`. Refund `pending` tidak mengurangi apa pun (BR-04.3 "hanya pembayaran verified yang dihitung").
+  3. **Status bayar dihitung, tidak disimpan.** `PaymentBalanceStatus` (`unpaid`/`partial`/`paid`) adalah enum PHP baru untuk nilai BR-12 yang **tidak punya kolom** di ERD (`arsitektur_sistem.md` bagian 2: "Status bayar dihitung, tidak disimpan"), sehingga **bukan perubahan skema**. Nilai persis sesuai BR-12: `terbayar = 0` → `unpaid`, `0 < terbayar < total` → `partial`, `terbayar >= total` → `paid`.
+  4. **`record()` selalu membuat `pending`, `verify()` hanya dari `pending`.** Ikut alur BR-04.3 `pending -> verified | failed`. `verify()` pada baris yang sudah `verified`/`failed` ditolak.
+  5. **Otorisasi memakai `RoleName` sebagai deny-list.** `record()` dan `verify()` hanya owner, manager, resepsionis. Peran tak dikenal dan housekeeping ditolak.
+  6. **Saran DP dihitung dari hari kalender.** `cancellationAdvice()` = `selisih hari (check_in_date - hari ini) >= properties.free_cancel_days` → `refund`, selain itu `forfeit`. Tepat di batas = refund (PY-06). `free_cancel_days` dibaca dari tabel `properties` (aturan 6), bukan konstanta.
+  7. **Parameter `?DpDecision`, default `null`.** Bila `null`, `settleCancellation()` **mengikuti saran**.
+  8. **Penyimpangan dari saran ditolak untuk resepsionis.** `settleCancellation()` membandingkan keputusan dengan saran; bila berbeda dan aktor bukan owner/manager → `PaymentException`. Pengecekan berjalan sebelum efek apapun di dalam `DB::transaction`.
+  9. **Refund = baris baru, `PaymentStatus::Refunded` tidak dipakai.** Baris refund dibuat `type = refund` **dan `status = verified`** langsung (BR-04.3 v1.3), `amount = netPaid()` (DP bersih). Baris deposit/refund lama tidak diubah statusnya, sehingga rumus BR-12 tidak pernah mengurangi dua kali.
+  10. **`payments.method` NOT NULL pada refund.** Metode baris refund disalin dari pembayaran masuk `verified` terbaru pada booking; fallback `bank_transfer`.
+  11. **DP bersih nol atau negatif → tidak ada baris refund.** `settleCancellation()` mengembalikan `null`.
+- Hasil akhir: **236/236 tes, 2166 assert, `pint` EXIT=0, diff `composer.*`/`package.*`/`database/migrations` terhadap `main` kosong, `git status` bersih.**
+- **Reviewer: agent Reviewer terpisah, Putaran 3 LULUS.**
+  - **Keterbatasan jujur / NIT yang dicatat:**
+    1. Race `record()` refund-manual bersamaan `settleCancellation()` tidak dikunci dan tidak diuji (kunci hanya di baris booking, `payments` tidak dikunci `lockForUpdate`).
+    2. Race `verify()` vs `cancel()` tidak dikunci baris pembayarannya.
+    3. Refund manual bisa melebihi terbayar sehingga `paymentStatus()` melabeli `unpaid`.
+    4. Refund pembatalan tanpa nomor referensi (`reference_number = null`).
 
 ### T-011 Transisi status dan transition guard (2026-10-12)
 

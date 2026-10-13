@@ -28,10 +28,17 @@ composer run dev          # php artisan dev: app server (http://127.0.0.1:8000),
 ```
 
 Stop with `Ctrl+C`. The scheduler is not part of `composer run dev`; run it in a separate
-terminal when needed:
+terminal when needed (e.g. to automatically run recurring tasks like expiring overdue pending
+bookings every 5 minutes):
 
 ```powershell
 php artisan schedule:work
+```
+
+You can also run the expiry command manually at any time:
+
+```powershell
+php artisan bookings:expire-pending
 ```
 
 ## Important commands
@@ -41,6 +48,8 @@ php artisan schedule:work
 | `docker compose up -d` / `docker compose stop` | Start / stop PostgreSQL |
 | `docker compose down -v` | Stop PostgreSQL and delete both databases and their data |
 | `composer run dev` | App server + queue worker + Vite dev server |
+| `php artisan schedule:work` | Run the local scheduler worker (runs scheduled tasks like pending booking expiry) |
+| `php artisan bookings:expire-pending` | Run the pending booking expiry command once manually |
 | `composer run test` | Config clear, Pint check, PHPStan, then `php artisan test` (Pest) |
 | `php artisan test` | Run the test suite only, against PostgreSQL `kamarin_test` |
 | `composer run lint` | Format code with Laravel Pint |
