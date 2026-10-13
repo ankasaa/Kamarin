@@ -3,13 +3,13 @@
 namespace App\Services;
 
 use App\Enums\BookingStatus;
+use App\Enums\DpDecision;
 use App\Enums\HousekeepingStatus as Cleanliness;
 use App\Enums\PaymentOption;
-use App\Enums\PaymentStatus;
-use App\Enums\PaymentType;
 use App\Enums\RoleName;
 use App\Exceptions\AvailabilityException;
 use App\Exceptions\BookingException;
+use App\Exceptions\PaymentException;
 use App\Exceptions\PricingException;
 use App\Models\Booking;
 use App\Models\BookingItem;
@@ -18,7 +18,6 @@ use App\Models\BookingSource;
 use App\Models\BookingStatusLog;
 use App\Models\Guest;
 use App\Models\HousekeepingStatus;
-use App\Models\Payment;
 use App\Models\Property;
 use App\Models\Room;
 use App\Models\User;
@@ -57,11 +56,14 @@ class BookingService
      *
      * Shape: [from status] => [to status] => rule, where a rule holds
      *
-     *   'roles'    the RoleName values allowed to run it (staff rows)
-     *   'system'   true for the one row the scheduler runs; it takes no actor
-     *   'requires' the condition checked before anything is written
-     *   'warns'    conditions reported but never blocking (BR-04.2, BR-07.5, BR-08.3)
-     *   'effects'  what changes besides bookings.status itself
+     *   'roles'       the RoleName values allowed to run it (staff rows)
+     *   'system'      true for the one row the scheduler runs; it takes no actor
+     *   'requires'    the condition checked before anything is written
+     *   'dp_decision' true on the two cancellation rows: the deposit
+     *                 decision of BR-05.2 is settled by PaymentService
+     *                 inside the same transaction (T-012)
+     *   'warns'       conditions reported but never blocking (BR-04.2, BR-07.5, BR-08.3)
+     *   'effects'     what changes besides bookings.status itself
      *
      * A from-status with no entry at all - checked_out, cancelled,
      * expired and no_show - is final: the lookup misses and the
@@ -81,6 +83,7 @@ class BookingService
             'cancelled' => [
                 'roles' => [RoleName::Owner, RoleName::Manager, RoleName::Receptionist],
                 'requires' => 'reason',
+                'dp_decision' => true,
                 'warns' => [],
                 'effects' => ['release_nights', 'mark_cancelled'],
             ],
@@ -95,6 +98,7 @@ class BookingService
             'cancelled' => [
                 'roles' => [RoleName::Owner, RoleName::Manager, RoleName::Receptionist],
                 'requires' => 'reason',
+                'dp_decision' => true,
                 'warns' => [],
                 'effects' => ['release_nights', 'mark_cancelled'],
             ],
@@ -124,6 +128,7 @@ class BookingService
     public function __construct(
         private readonly AvailabilityService $availability,
         private readonly PricingService $pricing,
+        private readonly PaymentService $payments,
     ) {}
 
     /**
@@ -337,14 +342,26 @@ class BookingService
      *
      * The reason is mandatory for every role, not only for the
      * receptionist the matrix names. Nights are released so the room can
-     * be sold again; a refund, when one is due, is recorded separately
-     * as a payment (BR-05.3, T-012).
+     * be sold again.
+     *
+     * $dpDecision is BR-05.2: return the deposit or forfeit it. Leaving
+     * it null follows the system's own advice, which is the only choice
+     * a receptionist has; owner and manager may deviate. A refund, when
+     * one is due, is written by PaymentService inside this same
+     * transaction, so a refusal leaves no refund and no cancellation
+     * behind (BR-05.3, PY-07, PY-08).
      *
      * @throws BookingException when the reason is missing
+     * @throws PaymentException when the deposit decision is not the
+     *                          actor's to make
      */
-    public function cancel(Booking $booking, ?User $actor = null, ?string $reason = null): BookingTransitionResult
-    {
-        return $this->transition($booking, BookingStatus::Cancelled, $actor, $reason);
+    public function cancel(
+        Booking $booking,
+        ?User $actor = null,
+        ?string $reason = null,
+        ?DpDecision $dpDecision = null,
+    ): BookingTransitionResult {
+        return $this->transition($booking, BookingStatus::Cancelled, $actor, $reason, $dpDecision);
     }
 
     /**
@@ -412,10 +429,12 @@ class BookingService
      *
      * @throws BookingException when the matrix, the actor or the
      *                          condition refuses the move
+     * @throws PaymentException when a cancellation's deposit decision
+     *                          belongs to someone else (T-012)
      */
-    private function transition(Booking $booking, BookingStatus $to, ?User $actor, ?string $reason): BookingTransitionResult
+    private function transition(Booking $booking, BookingStatus $to, ?User $actor, ?string $reason, ?DpDecision $dpDecision = null): BookingTransitionResult
     {
-        return DB::transaction(function () use ($booking, $to, $actor, $reason): BookingTransitionResult {
+        return DB::transaction(function () use ($booking, $to, $actor, $reason, $dpDecision): BookingTransitionResult {
             $id = $booking->getKey();
 
             /** @var Booking $booking re-read under the row lock */
@@ -434,6 +453,14 @@ class BookingService
 
             $this->assertActorMayRun($rule, $from, $to, $actor);
             $this->assertCondition($rule['requires'], $booking, $actor, $reason);
+
+            // BR-05.2 / Keterangan 2: settle the deposit decision before
+            // anything is written, still inside this transaction, so a
+            // receptionist who deviates from the advice leaves the
+            // booking confirmed and without a refund row (PY-08).
+            if (($rule['dp_decision'] ?? false) === true) {
+                $this->payments->settleCancellation($booking, $actor, $dpDecision);
+            }
 
             // Collected before the effects run, because the balance and
             // the cleanliness warnings describe the booking as it was
@@ -545,10 +572,8 @@ class BookingService
             return;
         }
 
-        $required = (int) round(
-            $booking->total_amount * (int) $booking->property->deposit_percent / 100,
-        );
-        $verified = $this->verifiedDeposit($booking);
+        $required = $this->payments->requiredDeposit($booking);
+        $verified = $this->payments->verifiedDeposit($booking);
 
         if ($verified >= $required) {
             return;
@@ -567,23 +592,6 @@ class BookingService
         if (trim((string) $reason) === '') {
             throw new BookingException('Waiving the deposit requirement needs a reason (K6).');
         }
-    }
-
-    /**
-     * BR-03.3: a deposit only counts while its payment is verified.
-     *
-     * T-011 deliberately keeps this as one plain query so the transition
-     * guard has no dependency on a payment service. T-012 moves it into
-     * PaymentService, which then becomes the single definition of
-     * "DP terverifikasi" (noted in docs/STATUS.md).
-     */
-    private function verifiedDeposit(Booking $booking): int
-    {
-        return (int) Payment::query()
-            ->where('booking_id', $booking->id)
-            ->where('status', PaymentStatus::Verified->value)
-            ->whereIn('type', [PaymentType::Deposit->value, PaymentType::Settlement->value])
-            ->sum('amount');
     }
 
     /**
@@ -707,42 +715,20 @@ class BookingService
 
     /**
      * BR-04.2: sisa tagihan still owed. Read through BR-12's "terbayar"
-     * (verified deposit and settlement minus refunds).
+     * (verified deposit and settlement minus verified refunds), which
+     * PaymentService owns as its single definition (T-012).
      *
      * @return array<int, string>
      */
     private function balanceWarnings(Booking $booking): array
     {
-        $balance = $booking->total_amount - $this->netPaid($booking);
+        $balance = $this->payments->balance($booking);
 
         if ($balance <= 0) {
             return [];
         }
 
         return [sprintf('An outstanding balance of %d rupiah is still due (BR-04.2).', $balance)];
-    }
-
-    /**
-     * BR-12 "Terbayar": verified deposit and settlement payments, minus
-     * what has been refunded.
-     *
-     * Same T-011 note as verifiedDeposit(): a plain query for now,
-     * moved into PaymentService with it in T-012.
-     */
-    private function netPaid(Booking $booking): int
-    {
-        $settled = Payment::query()
-            ->where('booking_id', $booking->id)
-            ->where('status', PaymentStatus::Verified->value)
-            ->whereIn('type', [PaymentType::Deposit->value, PaymentType::Settlement->value])
-            ->sum('amount');
-
-        $refunded = Payment::query()
-            ->where('booking_id', $booking->id)
-            ->where('type', PaymentType::Refund->value)
-            ->sum('amount');
-
-        return (int) $settled - (int) $refunded;
     }
 
     /**
