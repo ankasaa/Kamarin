@@ -5,25 +5,25 @@
 # Stop:    docker compose stop
 # Reset:   docker compose down -v   (deletes all data, both databases)
 services:
-  postgres:
-    image: postgres:18-alpine
-    container_name: kamarin-postgres
-    environment:
-      POSTGRES_USER: kamarin
-      POSTGRES_PASSWORD: kamarin
-      POSTGRES_DB: kamarin
-    ports:
-      - "127.0.0.1:5432:5432"
-    volumes:
-      # PostgreSQL 18+ expects a single mount at /var/lib/postgresql.
-      - pgsql-data:/var/lib/postgresql
-      # Creates the separate testing database on first start only.
-      - ./docker/postgresql/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kamarin -d kamarin"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+    postgres:
+        image: postgres:18-alpine
+        container_name: kamarin-postgres
+        environment:
+            POSTGRES_USER: kamarin
+            POSTGRES_PASSWORD: kamarin
+            POSTGRES_DB: kamarin
+        ports:
+            - '127.0.0.1:5432:5432'
+        volumes:
+            # PostgreSQL 18+ expects a single mount at /var/lib/postgresql.
+            - pgsql-data:/var/lib/postgresql
+            # Creates the separate testing database on first start only.
+            - ./docker/postgresql/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U kamarin -d kamarin']
+            interval: 5s
+            timeout: 5s
+            retries: 10
 
 volumes:
-  pgsql-data:
+    pgsql-data:

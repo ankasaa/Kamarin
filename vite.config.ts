@@ -66,6 +66,9 @@ export default defineConfig({
         ignorePatterns: [
             '.github/**',
             'composer.json',
+            // Source documents keep their own formatting (AGENTS.md,
+            // "Cara kerja"); they are never rewritten automatically.
+            'docs/**',
             'resources/js/components/ui/*',
             'resources/views/mail/*',
         ],
