@@ -1,6 +1,11 @@
 name: tests
 
+# T-015: the automatic triggers were missing before this task, so the
+# workflow only ran when triggered by hand. Pushes and pull requests now
+# run it on their own; workflow_dispatch is kept for a manual run.
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -9,6 +14,40 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
+
+    # AGENTS.md rule 10: tests run against real PostgreSQL, never SQLite,
+    # because the partial unique index and row locking can only be proven
+    # there. kamarin_test is the database phpunit.xml expects, created
+    # here the same way docker/postgresql/init-test-db.sql creates it
+    # during development.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: kamarin
+          POSTGRES_PASSWORD: kamarin
+          POSTGRES_DB: kamarin_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kamarin -d kamarin_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # Every source that could name the test database agrees on
+    # kamarin_test: this block, phpunit.xml, and the .env prepared below.
+    # Leaving any one of them on "kamarin" would point the suite at a
+    # database that does not exist on this runner.
+    env:
+      APP_ENV: testing
+      APP_TIMEZONE: Asia/Makassar
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_DATABASE: kamarin_test
+      DB_USERNAME: kamarin
+      DB_PASSWORD: kamarin
 
     steps:
       - name: Checkout code
@@ -20,16 +59,50 @@ jobs:
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.3'
+          extensions: pdo_pgsql
           tools: composer:v2
           coverage: none
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22'
+          node-version: '24'
+          cache: npm
 
-      - name: Setup Application
-        run: composer setup
+      - name: Install PHP dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
 
-      - name: Run CI Checks
-        run: composer ci:check
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Setup application
+        run: |
+          cp .env.example .env
+          sed -i 's/^DB_DATABASE=kamarin$/DB_DATABASE=kamarin_test/' .env
+          php artisan key:generate
+
+      # resources/js/actions and resources/js/routes are gitignored, so a
+      # fresh checkout has none of them. Without this step tsc would fail
+      # on unresolved imports such as @/actions/App/.../ProfileController.
+      #
+      # --with-form matches the wayfinder plugin in vite.config.ts
+      # (formVariants: true). Without it the route helpers are generated
+      # without a `.form` property and tsc reports 7 errors on the pages
+      # that use it.
+      - name: Generate Wayfinder actions and routes
+        run: php artisan wayfinder:generate --with-form
+
+      # composer ci:check is deliberately not used here: its @test step
+      # runs composer types:check, which is phpstan and still reports
+      # pre-existing project-wide errors outside this task.
+      - name: Type check (tsc)
+        run: npm run types:check
+
+      - name: Formatting and lint check (vite-plus)
+        run: npm run check
+
+      - name: PHP formatting check (Pint)
+        run: composer run lint:check
+
+      - name: Test suite (PostgreSQL)
+        run: php artisan test

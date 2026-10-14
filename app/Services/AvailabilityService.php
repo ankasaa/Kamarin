@@ -162,12 +162,19 @@ class AvailabilityService
      * (BR-01.6: the partial index only guards bookings against
      * bookings, so booking vs block overlap is enforced here).
      *
+     * Two blocks on the same room would silently overlap without this
+     * check too, for the very same reason, so the clash between blocks
+     * is refused here as well. Pass $excludeBlockId when re-checking a
+     * block that has already been written, so it does not clash with
+     * itself.
+     *
      * @throws AvailabilityException
      */
     public function assertRoomCanBeBlocked(
         Room $room,
         CarbonInterface|string $start,
         CarbonInterface|string $end,
+        ?int $excludeBlockId = null,
     ): void {
         [$from, $to] = $this->stayNights($start, $end, 'end_date', 'start_date');
 
@@ -178,6 +185,19 @@ class AvailabilityService
         if ($hasActiveNights) {
             throw new AvailabilityException(
                 "Room {$room->room_number} has active nights that overlap the block; move the booking first (BR-01).",
+            );
+        }
+
+        $hasOverlappingBlock = RoomBlock::query()
+            ->where('room_id', $room->id)
+            ->where('start_date', '<', $to)
+            ->where('end_date', '>', $from)
+            ->when($excludeBlockId !== null, fn (Builder $query) => $query->whereKeyNot($excludeBlockId))
+            ->exists();
+
+        if ($hasOverlappingBlock) {
+            throw new AvailabilityException(
+                "Room {$room->room_number} already has a block that overlaps this range (BR-01.6).",
             );
         }
     }

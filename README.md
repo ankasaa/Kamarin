@@ -43,27 +43,27 @@ php artisan bookings:expire-pending
 
 ## Important commands
 
-| Command | Purpose |
-| --- | --- |
-| `docker compose up -d` / `docker compose stop` | Start / stop PostgreSQL |
-| `docker compose down -v` | Stop PostgreSQL and delete both databases and their data |
-| `composer run dev` | App server + queue worker + Vite dev server |
-| `php artisan schedule:work` | Run the local scheduler worker (runs scheduled tasks like pending booking expiry) |
-| `php artisan bookings:expire-pending` | Run the pending booking expiry command once manually |
-| `composer run test` | Config clear, Pint check, PHPStan, then `php artisan test` (Pest) |
-| `php artisan test` | Run the test suite only, against PostgreSQL `kamarin_test` |
-| `composer run lint` | Format code with Laravel Pint |
+| Command                                        | Purpose                                                                           |
+| ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| `docker compose up -d` / `docker compose stop` | Start / stop PostgreSQL                                                           |
+| `docker compose down -v`                       | Stop PostgreSQL and delete both databases and their data                          |
+| `composer run dev`                             | App server + queue worker + Vite dev server                                       |
+| `php artisan schedule:work`                    | Run the local scheduler worker (runs scheduled tasks like pending booking expiry) |
+| `php artisan bookings:expire-pending`          | Run the pending booking expiry command once manually                              |
+| `composer run test`                            | Config clear, Pint check, PHPStan, then `php artisan test` (Pest)                 |
+| `php artisan test`                             | Run the test suite only, against PostgreSQL `kamarin_test`                        |
+| `composer run lint`                            | Format code with Laravel Pint                                                     |
 
 ## Versions (verified 2026-10-10)
 
-| Component | Version |
-| --- | --- |
-| PHP | 8.3.35 (local) |
-| Laravel | 13.35.0 (`laravel/framework`) |
+| Component  | Version                                  |
+| ---------- | ---------------------------------------- |
+| PHP        | 8.3.35 (local)                           |
+| Laravel    | 13.35.0 (`laravel/framework`)            |
 | PostgreSQL | 18.6 (Docker image `postgres:18-alpine`) |
-| Node / npm | 24.21.0 / 11.19.0 (local) |
-| Composer | 2.10.3 |
-| Pest | 4.7.8 |
+| Node / npm | 24.21.0 / 11.19.0 (local)                |
+| Composer   | 2.10.3                                   |
+| Pest       | 4.7.8                                    |
 
 ## Environment notes
 

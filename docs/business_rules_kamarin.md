@@ -1,6 +1,8 @@
-# Business Rules Kamarin (Draf v1.4)
+# Business Rules Kamarin (Draf v1.5)
 
 Diperbarui: 8 Oktober 2026
+
+**Perubahan v1.5:** hasil T-013. (1) Semua kode yang membuat atau mengubah penempatan kamar memakai pola kunci baris kamar yang sama (BR-01 butir 5). (2) Aturan BR-01 butir 4 (check-in tidak boleh lampau) hanya berlaku bila perubahan memindahkan `check_in_date`, supaya tamu yang sedang menginap tetap bisa diperpanjang (BR-06, kasus uji CH-12). (3) Pindah kamar di MVP hanya dalam tipe yang sama dan hanya untuk booking satu kamar. Pindah antar tipe ditunda (T-017, CH-13).
 
 **Perubahan v1.4:** keputusan pemilik dari review T-012 didokumentasikan: refund manual hanya Owner dan Manager (BR-04 butir 4), nomor referensi wajib untuk transfer bank dan OTA (BR-04 butir 5). Kasus uji PY-09 dan PY-10.
 
@@ -57,7 +59,7 @@ Aturan bernomor BR-01 sampai BR-10 mengikuti draf dari catatan wawancara. BR-11 
 2. Booking valid jika: semua malam tersedia, `check_out_date > check_in_date`, `guest_count` tidak melebihi total kapasitas kamar yang dipesan (`room_types.capacity` adalah kapasitas **maksimum**. Extra bed dicatat sebagai biaya tambahan tanpa penghitungan otomatis di MVP), dan jumlah malam memenuhi minimum_nights (BR-11).
 3. Check-out tamu A dan check-in tamu B pada tanggal yang sama untuk kamar yang sama diperbolehkan (turnover di hari yang sama).
 4. `check_in_date` tidak boleh lebih awal dari hari ini. Owner dan Manager boleh memakai tanggal lampau dengan alasan, untuk koreksi pencatatan 🟦.
-5. Penegakan tiga lapis: (1) pengecekan di service, (2) kunci baris kamar dan cek ulang di dalam transaksi, (3) unique index parsial `(room_id, stay_date) WHERE is_active`.
+5. Penegakan tiga lapis: (1) pengecekan di service, (2) kunci baris kamar dan cek ulang di dalam transaksi, (3) unique index parsial `(room_id, stay_date) WHERE is_active`. Semua kode yang membuat atau mengubah penempatan kamar (booking baru, perubahan booking, dan blokir kamar) memakai pola kunci yang sama: `SELECT ... FOR UPDATE` pada baris `rooms` berurutan id, lalu cek ulang di bawah kunci.
 6. Index hanya menjaga booking melawan booking. Bentrok antara booking dan `room_blocks` dijaga di service dan wajib diuji otomatis. Membuat blokir pada tanggal yang sudah punya malam aktif ditolak.
 
 ### BR-02 Jam check-in dan check-out ✅
@@ -194,6 +196,8 @@ Jenis perubahan: ubah tanggal, perpanjang, percepat check-out, pindah kamar, uba
 | Pencatatan | Satu baris `booking_change_logs` per perubahan: jenis, nilai lama, nilai baru, alasan, pelaku |
 | Notifikasi | Tidak ada email otomatis di MVP. Staf memberi tahu tamu lewat WhatsApp |
 | Percepat check-out saat checked_in | Malam setelah tanggal baru dinonaktifkan. Refund tidak otomatis, staf memutuskan dan mencatat |
+| Tanggal lampau | Aturan BR-01 butir 4 hanya dievaluasi bila perubahan memindahkan `check_in_date`. Memperpanjang atau mempercepat check-out tamu yang sedang menginap tidak dikenai aturan itu |
+| Pindah kamar | MVP: hanya dalam tipe kamar yang sama dan hanya untuk booking satu kamar. Pindah antar tipe (hitung ulang harga dengan tarif tipe baru dan tampilkan selisih) ditunda ke tugas lanjutan T-017 |
 
 ---
 
